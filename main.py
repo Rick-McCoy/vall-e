@@ -16,16 +16,16 @@ from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from lightning.pytorch.tuner import Tuner
 
 from config.config import Config
-from data.datamodule import SimpleDataModule
-from model.model import SimpleModel
+from data.datamodule import VallEDataModule
+from model.model import VallE
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: Config):
-    model = SimpleModel(cfg)
+    model = VallE(cfg)
     compiled_model = torch.compile(model)
-    compiled_model = cast(SimpleModel, compiled_model)
-    datamodule = SimpleDataModule(cfg)
+    compiled_model = cast(VallE, compiled_model)
+    datamodule = VallEDataModule(cfg)
 
     Path("logs").mkdir(exist_ok=True)
     if cfg.train.fast_dev_run:

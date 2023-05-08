@@ -1,25 +1,26 @@
-from torch.utils.data.dataset import random_split
-from torchvision import transforms
-from torchvision.datasets import MNIST
+from pathlib import Path
+
+import pandas as pd
+from pandas import Series
 
 
-def load_mnist(path: str) -> None:
-    MNIST(root=path, train=True, download=True)
-    MNIST(root=path, train=False, download=False)
+def load_metadata(csv_path: Path) -> tuple["Series[str]", "Series[str]", "Series[str]"]:
+    """Loads metadata from a CSV file.
+    The CSV file contains four columns: speaker, emotion, text, and codec_path.
+    The emotion column is combined with the speaker column to create the speaker list.
+    The text column is used as the text list.
+    The codec_path column is used as the codec path list.
 
+    Args:
+        csv_path (Path): Path to CSV file.
 
-def get_mnist(path: str):
-    mnist_transforms = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-        ]
-    )
-    train_val_dataset = MNIST(root=path, train=True, transform=mnist_transforms)
-    test_dataset = MNIST(root=path, train=False, transform=mnist_transforms)
-    train_len = int(len(train_val_dataset) * 0.9)
-    val_len = len(train_val_dataset) - train_len
+    Returns:
+        speaker_list (Series[str]): Series of speakers.
+        text_list (Series[str]): Series of texts.
+        codec_path_list (Series[str]): Series of codec paths."""
 
-    train_dataset, val_dataset = random_split(train_val_dataset, [train_len, val_len])
-
-    return train_dataset, val_dataset, test_dataset
+    df = pd.read_csv(csv_path)
+    speaker_list = df["speaker"].astype(str) + "-" + df["emotion"].astype(str)
+    text_list = df["text"].astype(str)
+    codec_path_list = df["codec_path"].astype(str)
+    return speaker_list, text_list, codec_path_list

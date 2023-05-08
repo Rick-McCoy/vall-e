@@ -6,7 +6,7 @@ from hydra import compose, initialize
 from torch import Tensor
 
 from config.config import Config
-from data.datamodule import SimpleDataModule
+from data.datamodule import VallEDataModule
 
 
 class TestDataModule(unittest.TestCase):
@@ -14,7 +14,7 @@ class TestDataModule(unittest.TestCase):
         with initialize(config_path="../config"):
             cfg = compose(config_name="config")
             self.cfg = cast(Config, cfg)
-            self.module = SimpleDataModule(self.cfg)
+            self.module = VallEDataModule(self.cfg)
 
         self.module.prepare_data()
         self.module.setup()
