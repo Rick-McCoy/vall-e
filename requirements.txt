@@ -1,9 +1,12 @@
+encodec==0.1.1
 hydra-core==1.3.2
+librosa==0.10.0
 lightning==2.0.2
 numpy==1.24.3
+soundfile==0.12.1
 tabulate==0.9.0
 tensorboard==2.13.0
-torch==2.0.0
+torch==2.0.1
 torchmetrics==0.11.4
-torchvision==0.15.1
+torchvision==0.15.2
 wandb==0.15.2

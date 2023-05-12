@@ -1,6 +1,8 @@
-path: "."
-sample_rate: 48000
-channels: 2
-enrolled_audio_len: 3
-max_text_len: 256
-max_audio_len: 10
+_path: "."
+train_val_split: 0.02
+sample_rate: 24000
+channels: 1
+codec_rate: 75
+codec_channels: 8
+codec_bits: 10
+_enrolled_codec_len: 3

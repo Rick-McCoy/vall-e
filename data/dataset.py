@@ -1,14 +1,21 @@
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import torch
 from torch.utils.data import Dataset
 
 from config.config import Config
 from data.audio import load_codec
 from data.text import encode_text
 from data.utils import load_metadata
+
+
+@dataclass
+class Batch:
+    text: np.ndarray
+    audio: np.ndarray
+    enrolled_audio: np.ndarray
 
 
 class VallEDataset(Dataset):
@@ -27,13 +34,11 @@ class VallEDataset(Dataset):
 
     def __getitem__(self, index: int):
         text = self.text_list[index]
-        text_len = torch.tensor([len(text)])
         speaker = self.speaker_list[index]
         codec_path = Path(self.codec_path_list[index])
         enrolled_codec_path = self.get_enrolled_codec_path(speaker, index)
         encoded_text = encode_text(text)
         codec = load_codec(codec_path)
-        codec_len = np.array([codec.shape[1]])
         enrolled_codec = load_codec(enrolled_codec_path)
         enrolled_codec_len = enrolled_codec.shape[1]
         if enrolled_codec_len > self.cfg.data.enrolled_codec_len:
@@ -48,9 +53,7 @@ class VallEDataset(Dataset):
             enrolled_codec = np.pad(enrolled_codec, ((0, 0), (0, pad)))
         return Batch(
             text=encoded_text,
-            text_len=text_len,
             audio=codec,
-            audio_len=codec_len,
             enrolled_audio=enrolled_codec,
         )
 
