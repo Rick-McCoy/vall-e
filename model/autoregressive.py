@@ -13,14 +13,9 @@ class AutoRegressive(nn.Module):
             num_embeddings=VOCAB_SIZE,
             embedding_dim=config.model.hidden_dim,
         )
-        self.audio_embeddings = nn.ModuleList(
-            [
-                nn.Embedding(
-                    num_embeddings=2**config.data.codec_bits,
-                    embedding_dim=config.model.hidden_dim,
-                )
-                for _ in range(config.data.codec_channels)
-            ]
+        self.audio_embedding = nn.Embedding(
+            num_embeddings=2**config.data.codec_bits,
+            embedding_dim=config.model.hidden_dim,
         )
         self.transformer_decoder = nn.TransformerDecoder(
             decoder_layer=nn.TransformerDecoderLayer(
@@ -42,16 +37,8 @@ class AutoRegressive(nn.Module):
         audio_len_batch: Tensor,
     ):
         text_embedding = self.text_embedding(text)
-        audio_embedding = self.audio_embeddings[0](audio)
-        enrolled_audio_embedding = torch.stack(
-            [
-                embedding(enrolled_audio[:, i])
-                for i, embedding in enumerate(self.audio_embeddings)
-            ],
-            dim=1,
-        ).sum(
-            dim=1,
-        )
+        audio_embedding = self.audio_embedding(audio)
+        enrolled_audio_embedding = self.audio_embedding(enrolled_audio)
         embed_list = []
 
         max_len = (
@@ -88,9 +75,5 @@ class AutoRegressive(nn.Module):
             diagonal=1,
         )
         mask[:, : int((text_len_batch + audio_len_batch).max().item())] = False
-        output = self.transformer_decoder(
-            embed,
-            embed,
-            tgt_mask=mask,
-        )
+        output = self.transformer_decoder(embed, embed, tgt_mask=mask)
         return output.transpose(0, 1)

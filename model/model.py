@@ -81,7 +81,7 @@ class VallE(LightningModule):
         for i in range(1, self.cfg.data.codec_channels):
             nar_output_batch = self.nonautoregressive(
                 text,
-                audio[:, i - 1],
+                audio[:, :i],
                 enrolled_audio,
                 text_len_batch,
                 audio_len_batch,
