@@ -55,7 +55,7 @@ class VallE(LightningModule):
         **kwargs,
     ) -> Tensor:
         ar_output_batch = self.autoregressive(
-            text, audio, enrolled_audio[:, 0], text_len_batch, audio_len_batch
+            text, audio[:, 0], enrolled_audio[:, 0], text_len_batch, audio_len_batch
         )
         ar_output_split = []
         for ar_output, text_len, audio_len in zip(
@@ -71,8 +71,8 @@ class VallE(LightningModule):
                     + self.cfg.data.enrolled_codec_len
                     + audio_len_item
                     - 1
-                ].argmax(dim=-1),
-                (0, audio.shape[0] - audio_len_item),
+                ],
+                (0, 0, 0, audio.shape[1] - audio_len_item),
             )
             ar_output_split.append(ar_output)
         ar_padded_output = torch.stack(ar_output_split, dim=0)
@@ -99,14 +99,14 @@ class VallE(LightningModule):
                         + self.cfg.data.enrolled_codec_len : text_len_item
                         + self.cfg.data.enrolled_codec_len
                         + audio_len_item
-                    ].argmax(dim=-1),
-                    (0, self.cfg.data.max_audio_len - audio_len_item),
+                    ],
+                    (0, 0, 0, audio.shape[1] - audio_len_item),
                 )
                 nar_output_split.append(nar_output)
             nar_output_batch = torch.stack(nar_output_split, dim=0)
             nar_output_list.append(nar_output_batch)
 
-        return torch.cat([ar_padded_output] + nar_output_list, dim=1)
+        return torch.stack([ar_padded_output] + nar_output_list, dim=1)
 
     def training_step(self, batch: CollatedBatch, *args, **kwargs) -> Tensor:
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)

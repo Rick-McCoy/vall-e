@@ -3,10 +3,9 @@ from dataclasses import dataclass
 
 @dataclass
 class ModelConfig:
-    kernel_size: int = 3
-    input_channels: int = 1
-    hidden_channels: int = 16
-    h: int = 28
-    w: int = 28
-    num_classes: int = 10
-    num_layers: int = 8
+    hidden_dim: int = 256
+    nhead: int = 4
+    dim_feedforward: int = 1024
+    dropout: float = 0.1
+    activation: str = "relu"
+    num_layers: int = 4
