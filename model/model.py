@@ -8,7 +8,7 @@ from torchmetrics.classification import MulticlassAccuracy
 from config.config import Config
 from data.datamodule import CollatedBatch
 from model.autoregressive import AutoRegressive
-from model.loss import SimpleLoss
+from model.loss import VallELoss
 from model.nonautoregressive import NonAutoRegressive
 
 
@@ -19,10 +19,20 @@ class VallE(LightningModule):
         self.learning_rate = cfg.train.lr
         self.autoregressive = AutoRegressive(cfg)
         self.nonautoregressive = NonAutoRegressive(cfg)
-        self.loss = SimpleLoss(cfg)
-        self.acc = MulticlassAccuracy(num_classes=cfg.model.num_classes, top_k=1)
-        self.example_input_array = torch.zeros(
-            (1, cfg.model.input_channels, cfg.model.h, cfg.model.w)
+        self.loss = VallELoss(cfg)
+        self.acc = MulticlassAccuracy(num_classes=2**cfg.data.codec_bits, top_k=1)
+        self.example_input_array = (
+            torch.randint(0, 2**cfg.data.codec_bits, (2, 10)).long(),
+            torch.randint(
+                0, 2**cfg.data.codec_bits, (2, cfg.data.codec_channels, 30)
+            ).long(),
+            torch.randint(
+                0,
+                2**cfg.data.codec_bits,
+                (2, cfg.data.codec_channels, cfg.data.enrolled_codec_len),
+            ).long(),
+            torch.tensor([5, 10]),
+            torch.tensor([30, 10]),
         )
         self.logger: WandbLogger
 

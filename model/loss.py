@@ -3,7 +3,7 @@ from torch import Tensor, nn
 from config.config import Config
 
 
-class SimpleLoss(nn.Module):
+class VallELoss(nn.Module):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
         self.cfg = cfg

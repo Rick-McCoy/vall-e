@@ -36,6 +36,14 @@ class NonAutoRegressive(nn.Module):
             ),
             num_layers=config.model.num_layers,
         )
+        self.linears = nn.ModuleList(
+            [
+                nn.Linear(
+                    in_features=config.model.hidden_dim,
+                    out_features=2**config.data.codec_bits,
+                )
+            ]
+        )
 
     def forward(
         self,
@@ -101,5 +109,11 @@ class NonAutoRegressive(nn.Module):
             )
 
         embed = torch.stack(embed_list, dim=0).transpose(0, 1)
-        output = self.transformer_decoder(embed, embed)
-        return output.transpose(0, 1)
+        transformer_output = self.transformer_decoder(embed, embed)
+        for i, linear in enumerate(self.linears):
+            if i == index:
+                output = linear(transformer_output[:, -1, :])
+                break
+        else:
+            raise ValueError(f"index {index} is out of range")
+        return output

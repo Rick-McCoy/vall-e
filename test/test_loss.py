@@ -6,7 +6,7 @@ import torch
 from hydra import compose, initialize
 
 from config.config import Config
-from model.loss import SimpleLoss
+from model.loss import VallELoss
 
 
 class TestLoss(unittest.TestCase):
@@ -14,7 +14,7 @@ class TestLoss(unittest.TestCase):
         with initialize(config_path="../config"):
             cfg = compose(config_name="config")
             self.cfg = cast(Config, cfg)
-            self.loss = SimpleLoss(self.cfg)
+            self.loss = VallELoss(self.cfg)
 
     def test_loss(self):
         logit_1 = torch.zeros(8, self.cfg.model.num_classes)

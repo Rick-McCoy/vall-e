@@ -27,6 +27,10 @@ class AutoRegressive(nn.Module):
             ),
             num_layers=config.model.num_layers,
         )
+        self.linear = nn.Linear(
+            in_features=config.model.hidden_dim,
+            out_features=2**config.data.codec_bits,
+        )
 
     def forward(
         self,
@@ -75,5 +79,6 @@ class AutoRegressive(nn.Module):
             diagonal=1,
         )
         mask[:, : int((text_len_batch + audio_len_batch).max().item())] = False
-        output = self.transformer_decoder(embed, embed, tgt_mask=mask)
-        return output.transpose(0, 1)
+        transformer_output = self.transformer_decoder(embed, embed, tgt_mask=mask)
+        output = self.linear(transformer_output.transpose(0, 1))
+        return output
