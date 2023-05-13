@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Literal
 
 
 @dataclass
@@ -15,5 +14,5 @@ class TrainConfig:
     monitor: bool = False
     num_workers: int = 2
     optimizer: str = "Adam"
-    precision: Literal["32"] | Literal["16-mixed"] = "32"
+    precision: str = "32"
     project: str = "toy"

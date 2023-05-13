@@ -9,6 +9,9 @@ class AutoRegressive(nn.Module):
     def __init__(self, config: Config):
         super().__init__()
         self.cfg = config
+        self.enrolled_codec_len = (
+            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate
+        )
         self.text_embedding = nn.Embedding(
             num_embeddings=VOCAB_SIZE,
             embedding_dim=config.model.hidden_dim,
@@ -47,7 +50,7 @@ class AutoRegressive(nn.Module):
 
         max_len = (
             int((text_len_batch + audio_len_batch).max().item())
-            + self.cfg.data.enrolled_codec_len
+            + self.enrolled_codec_len
         )
         for text_embed, audio_embed, enrolled_audio_embed, text_len, audio_len in zip(
             text_embedding,
@@ -58,7 +61,7 @@ class AutoRegressive(nn.Module):
         ):
             text_len_item = int(text_len.item())
             audio_len_item = int(audio_len.item())
-            item_len = text_len_item + audio_len_item + self.cfg.data.enrolled_codec_len
+            item_len = text_len_item + audio_len_item + self.enrolled_codec_len
             embed_list.append(
                 nn.functional.pad(
                     torch.cat(

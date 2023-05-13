@@ -74,6 +74,8 @@ def main(cfg: Config):
     if torch.cuda.is_available():
         torch.set_float32_matmul_precision("medium")
 
+    precision = cfg.train.precision
+    assert precision == "32" or precision == "16-mixed"
     trainer = Trainer(
         accelerator="auto",
         strategy="ddp",
@@ -85,7 +87,7 @@ def main(cfg: Config):
         logger=[logger],
         max_epochs=-1,
         num_sanity_val_steps=2,
-        precision=cfg.train.precision,
+        precision=precision,
     )
     tuner = Tuner(trainer)
 

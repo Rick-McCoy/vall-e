@@ -28,28 +28,29 @@ class VallEDataset(Dataset):
         )
         self.length = len(self.speaker_list)
         self.speaker_to_indices = self.group_by_speaker()
+        self.enrolled_codec_len = (
+            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate
+        )
 
     def __len__(self) -> int:
         return self.length
 
     def __getitem__(self, index: int):
         text = self.text_list[index]
-        speaker = self.speaker_list[index]
-        codec_path = Path(self.codec_path_list[index])
-        enrolled_codec_path = self.get_enrolled_codec_path(speaker, index)
         encoded_text = encode_text(text)
+
+        codec_path = Path(self.codec_path_list[index])
         codec = load_codec(codec_path)
+
+        speaker = self.speaker_list[index]
+        enrolled_codec_path = self.get_enrolled_codec_path(speaker, index)
         enrolled_codec = load_codec(enrolled_codec_path)
         enrolled_codec_len = enrolled_codec.shape[1]
-        if enrolled_codec_len > self.cfg.data.enrolled_codec_len:
-            start = self.rng.integers(
-                0, enrolled_codec_len - self.cfg.data.enrolled_codec_len
-            )
-            enrolled_codec = enrolled_codec[
-                :, start : start + self.cfg.data.enrolled_codec_len
-            ]
-        elif enrolled_codec_len < self.cfg.data.enrolled_codec_len:
-            pad = self.cfg.data.enrolled_codec_len - enrolled_codec_len
+        if enrolled_codec_len > self.enrolled_codec_len:
+            start = self.rng.integers(0, enrolled_codec_len - self.enrolled_codec_len)
+            enrolled_codec = enrolled_codec[:, start : start + self.enrolled_codec_len]
+        elif enrolled_codec_len < self.enrolled_codec_len:
+            pad = self.enrolled_codec_len - enrolled_codec_len
             enrolled_codec = np.pad(enrolled_codec, ((0, 0), (0, pad)))
         return Batch(
             text=encoded_text,

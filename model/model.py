@@ -16,6 +16,9 @@ class VallE(LightningModule):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
         self.cfg = cfg
+        self.enrolled_codec_len = (
+            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate
+        )
         self.learning_rate = cfg.train.lr
         self.autoregressive = AutoRegressive(cfg)
         self.nonautoregressive = NonAutoRegressive(cfg)
@@ -29,7 +32,7 @@ class VallE(LightningModule):
             torch.randint(
                 0,
                 2**cfg.data.codec_bits,
-                (2, cfg.data.codec_channels, cfg.data.enrolled_codec_len),
+                (2, cfg.data.codec_channels, self.enrolled_codec_len),
             ).long(),
             torch.tensor([5, 10]),
             torch.tensor([30, 10]),
@@ -76,9 +79,9 @@ class VallE(LightningModule):
             ar_output = torch.nn.functional.pad(
                 ar_output[
                     text_len_item
-                    + self.cfg.data.enrolled_codec_len
+                    + self.enrolled_codec_len
                     - 1 : text_len_item
-                    + self.cfg.data.enrolled_codec_len
+                    + self.enrolled_codec_len
                     + audio_len_item
                     - 1
                 ],
@@ -106,8 +109,8 @@ class VallE(LightningModule):
                 nar_output = torch.nn.functional.pad(
                     nar_output[
                         text_len_item
-                        + self.cfg.data.enrolled_codec_len : text_len_item
-                        + self.cfg.data.enrolled_codec_len
+                        + self.enrolled_codec_len : text_len_item
+                        + self.enrolled_codec_len
                         + audio_len_item
                     ],
                     (0, 0, 0, audio.shape[1] - audio_len_item),

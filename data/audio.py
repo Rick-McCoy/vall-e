@@ -65,34 +65,33 @@ def audio_to_codec(audio: torch.Tensor, encodec_model: EncodecModel) -> torch.Te
     """Encodes audio to a codec tensor.
 
     Args:
-        audio (torch.Tensor): Audio tensor. Shape: (channels, samples)
+        audio (torch.Tensor): Audio tensor. Shape: (batch, channels, samples)
         encodec_model (EncodecModel): Encodec model to use for encoding.
 
     Returns:
-        codec (torch.Tensor): Codec tensor. Shape: (8, samples // compression_factor)"""
+        codec (torch.Tensor): Codec tensor. Shape: (batch, 8, ceil(samples / compression_factor))
+    """
     with torch.no_grad():
-        audio = audio.unsqueeze(0)
         frames = encodec_model.encode(audio)
         # Each frame is a tuple of (codec, scale) of 1 second segments
         # We ignore scale here
-        return torch.cat([frame[0] for frame in frames], dim=-1)[0]
+        return torch.cat([frame[0] for frame in frames], dim=-1)
 
 
 def codec_to_audio(codec: torch.Tensor, encodec_model: EncodecModel) -> torch.Tensor:
     """Decodes a codec tensor to audio.
 
     Args:
-        codec (torch.Tensor): Codec tensor. Shape: (8, samples // compression_factor)
+        codec (torch.Tensor): Codec tensor. Shape: (batch, 8, codec_samples)
         encodec_model (EncodecModel): Encodec model to use for decoding.
 
     Returns:
-        audio (torch.Tensor): Audio tensor. Shape: (channels, samples)"""
+        audio (torch.Tensor): Audio tensor. Shape: (batch, channels, codec_samples * compression_factor)
+    """
     with torch.no_grad():
-        codec = codec.unsqueeze(0)
         if encodec_model.segment is None:
             frames: list[EncodedFrame] = [(codec, None)]
         else:
             segments = torch.split(codec, 150, dim=-1)
             frames: list[EncodedFrame] = [(segment, None) for segment in segments]
-        audio = encodec_model.decode(frames)
-        return audio.squeeze(0)
+        return encodec_model.decode(frames)

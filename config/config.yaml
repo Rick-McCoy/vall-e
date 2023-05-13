@@ -1,7 +1,0 @@
-defaults:
-  - _self_
-  - data: data
-  - model: model
-  - train: train
-
-name: "toy_model"

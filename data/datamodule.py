@@ -59,8 +59,10 @@ class VallEDataModule(LightningDataModule):
         pass
 
     def setup(self, stage: Optional[str] = None) -> None:
-        self.train_val_dataset = VallEDataset(self.cfg, self.cfg.data.train_val_path)
-        self.test_dataset = VallEDataset(self.cfg, self.cfg.data.test_path)
+        self.train_val_dataset = VallEDataset(
+            self.cfg, self.cfg.data.path / "train_val.csv"
+        )
+        self.test_dataset = VallEDataset(self.cfg, self.cfg.data.path / "test.csv")
 
         train_val_size = len(self.train_val_dataset)
         train_size = int(train_val_size * self.cfg.data.train_val_split)

@@ -1,8 +1,0 @@
-_path: "."
-train_val_split: 0.02
-sample_rate: 24000
-channels: 1
-codec_rate: 75
-codec_channels: 8
-codec_bits: 10
-_enrolled_codec_len: 3
