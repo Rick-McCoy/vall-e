@@ -85,7 +85,7 @@ class VallE(LightningModule):
                     + audio_len_item
                     - 1
                 ],
-                (0, 0, 0, audio.shape[1] - audio_len_item),
+                (0, 0, 0, audio.shape[2] - audio_len_item),
             )
             ar_output_split.append(ar_output)
         ar_padded_output = torch.stack(ar_output_split, dim=0)
@@ -113,7 +113,7 @@ class VallE(LightningModule):
                         + self.enrolled_codec_len
                         + audio_len_item
                     ],
-                    (0, 0, 0, audio.shape[1] - audio_len_item),
+                    (0, 0, 0, audio.shape[2] - audio_len_item),
                 )
                 nar_output_split.append(nar_output)
             nar_output_batch = torch.stack(nar_output_split, dim=0)

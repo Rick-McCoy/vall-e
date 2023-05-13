@@ -3,6 +3,7 @@ from torch import Tensor, nn
 
 from config.config import Config
 from data.text import VOCAB_SIZE
+from model.positional_encoding import PositionalEncoding
 
 
 class NonAutoRegressive(nn.Module):
@@ -25,6 +26,10 @@ class NonAutoRegressive(nn.Module):
                 for _ in range(config.data.codec_channels)
             ]
         )
+        self.positional_encoding = PositionalEncoding(
+            d_model=config.model.hidden_dim,
+            dropout=config.model.dropout,
+        )
         self.index_embedding = nn.Embedding(
             num_embeddings=config.data.codec_channels,
             embedding_dim=config.model.hidden_dim,
@@ -45,6 +50,7 @@ class NonAutoRegressive(nn.Module):
                     in_features=config.model.hidden_dim,
                     out_features=2**config.data.codec_bits,
                 )
+                for _ in range(config.data.codec_channels)
             ]
         )
 
@@ -57,32 +63,31 @@ class NonAutoRegressive(nn.Module):
         audio_len_batch: Tensor,
         index: int,
     ):
-        text_embedding = self.text_embedding(text)
+        text_embedding = self.positional_encoding(self.text_embedding(text))
         audio_embed_list = []
         for i, embedding in enumerate(self.audio_embeddings):
             audio_embed_list.append(embedding(audio[:, i]))
-            if i == index:
+            if i == index - 1:
                 break
-        audio_embedding = torch.stack(audio_embed_list, dim=1).sum(dim=1)
-        enrolled_audio_embedding = torch.stack(
-            [
-                embedding(enrolled_audio[:, i])
-                for i, embedding in enumerate(self.audio_embeddings)
-            ],
-            dim=1,
-        ).sum(
-            dim=1,
+        audio_embedding = self.positional_encoding(
+            torch.stack(audio_embed_list, dim=1).sum(dim=1)
         )
-        index_embedding = (
-            self.index_embedding(torch.tensor(index))
-            .reshape(1, 1, -1)
-            .repeat(text.shape[0], 1, 1)
+        enrolled_audio_embed_list = [
+            embedding(enrolled_audio[:, i])
+            for i, embedding in enumerate(self.audio_embeddings)
+        ]
+        enrolled_audio_embedding = self.positional_encoding(
+            torch.stack(enrolled_audio_embed_list, dim=1).sum(dim=1)
         )
+        index_embedding = self.positional_encoding(
+            self.index_embedding(torch.tensor(index)).reshape(1, 1, -1)
+        ).squeeze(0)
 
         embed_list = []
         max_len = (
             int((text_len_batch + audio_len_batch).max().item())
             + self.enrolled_codec_len
+            + 1
         )
         for text_embed, audio_embed, enrolled_audio_embed, text_len, audio_len in zip(
             text_embedding,
@@ -98,12 +103,12 @@ class NonAutoRegressive(nn.Module):
                 nn.functional.pad(
                     torch.cat(
                         [
-                            text_embed[:, :text_len_item],
-                            audio_embed[:, :audio_len_item],
+                            text_embed[:text_len_item],
+                            audio_embed[:audio_len_item],
                             enrolled_audio_embed,
                             index_embedding,
                         ],
-                        dim=1,
+                        dim=0,
                     ),
                     (0, 0, 0, max_len - item_len),
                 )
@@ -112,8 +117,8 @@ class NonAutoRegressive(nn.Module):
         embed = torch.stack(embed_list, dim=0).transpose(0, 1)
         transformer_output = self.transformer_decoder(embed, embed)
         for i, linear in enumerate(self.linears):
-            if i == index:
-                output = linear(transformer_output[:, -1, :])
+            if i == index - 1:
+                output = linear(transformer_output.transpose(0, 1))
                 break
         else:
             raise ValueError(f"index {index} is out of range")

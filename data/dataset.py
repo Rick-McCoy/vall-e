@@ -1,6 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from torch.utils.data import Dataset
@@ -19,12 +19,15 @@ class Batch:
 
 
 class VallEDataset(Dataset):
-    def __init__(self, cfg: Config, data_path: Path):
+    def __init__(self, cfg: Config, mode: Literal["train_val"] | Literal["test"]):
         super().__init__()
         self.cfg = cfg
         self.rng = np.random.default_rng()
         self.speaker_list, self.text_list, self.codec_path_list = load_metadata(
-            data_path
+            cfg.data.path / f"{mode}.csv"
+        )
+        self.codec_base_path = (
+            cfg.data.path / ("train" if mode == "train_val" else "val") / "codec"
         )
         self.length = len(self.speaker_list)
         self.speaker_to_indices = self.group_by_speaker()
@@ -38,8 +41,9 @@ class VallEDataset(Dataset):
     def __getitem__(self, index: int):
         text = self.text_list[index]
         encoded_text = encode_text(text)
+        padded_text = np.pad(encoded_text, (0, 1), mode="constant")
 
-        codec_path = Path(self.codec_path_list[index])
+        codec_path = self.codec_base_path / self.codec_path_list[index]
         codec = load_codec(codec_path)
 
         speaker = self.speaker_list[index]
@@ -52,10 +56,11 @@ class VallEDataset(Dataset):
         elif enrolled_codec_len < self.enrolled_codec_len:
             pad = self.enrolled_codec_len - enrolled_codec_len
             enrolled_codec = np.pad(enrolled_codec, ((0, 0), (0, pad)))
+        padded_enrolled_codec = np.pad(
+            enrolled_codec, ((0, 0), (0, 1)), mode="constant"
+        )
         return Batch(
-            text=encoded_text,
-            audio=codec,
-            enrolled_audio=enrolled_codec,
+            text=padded_text, audio=codec, enrolled_audio=padded_enrolled_codec
         )
 
     def group_by_speaker(self) -> defaultdict[str, list[int]]:
@@ -71,4 +76,4 @@ class VallEDataset(Dataset):
         indices = self.speaker_to_indices[speaker]
         while (indice := self.rng.choice(indices)) == index:
             pass
-        return Path(self.codec_path_list[indice])
+        return self.codec_base_path / self.codec_path_list[indice]

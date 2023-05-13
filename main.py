@@ -6,6 +6,7 @@ import hydra
 import torch
 import torch._dynamo.config
 import wandb
+from hydra.core.config_store import ConfigStore
 from lightning import Trainer
 from lightning.pytorch.callbacks import (
     DeviceStatsMonitor,
@@ -16,8 +17,17 @@ from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from lightning.pytorch.tuner import Tuner
 
 from config.config import Config
+from config.data.config import DataConfig
+from config.model.config import ModelConfig
+from config.train.config import TrainConfig
 from data.datamodule import VallEDataModule
 from model.model import VallE
+
+cs = ConfigStore.instance()
+cs.store(name="config", node=Config)
+cs.store(group="train", name="base_train", node=TrainConfig)
+cs.store(group="data", name="base_data", node=DataConfig)
+cs.store(group="model", name="base_model", node=ModelConfig)
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
