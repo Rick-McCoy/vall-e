@@ -48,20 +48,18 @@ class AutoRegressive(nn.Module):
         text_len_batch: Tensor,
         audio_len_batch: Tensor,
     ):
-        print(text_len_batch)
-        print(audio_len_batch)
         text_embedding = self.positional_encoding(self.text_embedding(text))
         audio_embedding = self.positional_encoding(self.audio_embedding(audio))
         enrolled_audio_embedding = self.positional_encoding(
             self.audio_embedding(enrolled_audio)
         )
-        embed_list = []
 
         max_len = (
             int((text_len_batch + audio_len_batch).max().item())
             + self.enrolled_codec_len
         )
-        print(max_len)
+        embed_list = []
+        mask_list = []
         for text_embed, audio_embed, enrolled_audio_embed, text_len, audio_len in zip(
             text_embedding,
             audio_embedding,
@@ -77,21 +75,27 @@ class AutoRegressive(nn.Module):
                     torch.cat(
                         [
                             text_embed[:text_len_item],
-                            audio_embed[:audio_len_item],
                             enrolled_audio_embed,
+                            audio_embed[:audio_len_item],
                         ],
                         dim=0,
                     ),
                     (0, 0, 0, max_len - item_len),
                 )
             )
+            mask_item = (
+                torch.full((item_len, item_len), float("-inf")).triu(1).to(text.device)
+            )
+            mask_item[:, : text_len_item + self.enrolled_codec_len] = 0
+            mask_list.append(
+                nn.functional.pad(
+                    mask_item,
+                    (0, max_len - item_len, 0, max_len - item_len),
+                )
+            )
 
+        mask = torch.stack(mask_list, dim=0).repeat(self.cfg.model.nhead, 1, 1)
         embed = torch.stack(embed_list, dim=0).transpose(0, 1)
-        mask = torch.triu(
-            torch.ones(max_len, max_len, device=text.device, dtype=torch.bool),
-            diagonal=1,
-        )
-        mask[:, : int((text_len_batch + audio_len_batch).max().item())] = False
         transformer_output = self.transformer_decoder(embed, embed, tgt_mask=mask)
         output = self.linear(transformer_output.transpose(0, 1))
         return output

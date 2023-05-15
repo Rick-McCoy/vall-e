@@ -104,8 +104,8 @@ class NonAutoRegressive(nn.Module):
                     torch.cat(
                         [
                             text_embed[:text_len_item],
-                            audio_embed[:audio_len_item],
                             enrolled_audio_embed,
+                            audio_embed[:audio_len_item],
                             index_embedding,
                         ],
                         dim=0,
