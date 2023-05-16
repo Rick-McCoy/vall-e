@@ -11,7 +11,7 @@ class AutoRegressive(nn.Module):
         super().__init__()
         self.cfg = config
         self.enrolled_codec_len = (
-            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate
+            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate + 1
         )
         self.text_embedding = nn.Embedding(
             num_embeddings=VOCAB_SIZE,
@@ -67,16 +67,14 @@ class AutoRegressive(nn.Module):
             text_len_batch,
             audio_len_batch,
         ):
-            text_len_item = int(text_len.item())
-            audio_len_item = int(audio_len.item())
-            item_len = text_len_item + audio_len_item + self.enrolled_codec_len
+            item_len = int((text_len + audio_len).item()) + self.enrolled_codec_len
             embed_list.append(
                 nn.functional.pad(
                     torch.cat(
                         [
-                            text_embed[:text_len_item],
+                            text_embed[:text_len],
                             enrolled_audio_embed,
-                            audio_embed[:audio_len_item],
+                            audio_embed[:audio_len],
                         ],
                         dim=0,
                     ),
@@ -86,7 +84,7 @@ class AutoRegressive(nn.Module):
             mask_item = (
                 torch.full((item_len, item_len), float("-inf")).triu(1).to(text.device)
             )
-            mask_item[:, : text_len_item + self.enrolled_codec_len] = 0
+            mask_item[:, : text_len + self.enrolled_codec_len] = 0
             mask_list.append(
                 nn.functional.pad(
                     mask_item,
@@ -94,7 +92,9 @@ class AutoRegressive(nn.Module):
                 )
             )
 
-        mask = torch.stack(mask_list, dim=0).repeat(self.cfg.model.nhead, 1, 1)
+        mask = torch.stack(mask_list, dim=0).repeat_interleave(
+            repeats=self.cfg.model.nhead, dim=0
+        )
         embed = torch.stack(embed_list, dim=0).transpose(0, 1)
         transformer_output = self.transformer_decoder(embed, embed, tgt_mask=mask)
         output = self.linear(transformer_output.transpose(0, 1))

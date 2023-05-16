@@ -33,7 +33,7 @@ cs.store(group="model", name="base_model", node=ModelConfig)
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: Config):
     model = VallE(cfg)
-    compiled_model = torch.compile(model)
+    compiled_model = torch.compile(model, disable=True)
     compiled_model = cast(VallE, compiled_model)
     datamodule = VallEDataModule(cfg)
 

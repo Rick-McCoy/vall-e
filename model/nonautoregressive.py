@@ -11,7 +11,7 @@ class NonAutoRegressive(nn.Module):
         super().__init__()
         self.cfg = config
         self.enrolled_codec_len = (
-            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate
+            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate + 1
         )
         self.text_embedding = nn.Embedding(
             num_embeddings=VOCAB_SIZE,
@@ -80,7 +80,7 @@ class NonAutoRegressive(nn.Module):
             torch.stack(enrolled_audio_embed_list, dim=1).sum(dim=1)
         )
         index_embedding = self.positional_encoding(
-            self.index_embedding(torch.tensor(index)).reshape(1, 1, -1)
+            self.index_embedding.weight[index].reshape(1, 1, -1)
         ).squeeze(0)
 
         embed_list = []
@@ -96,16 +96,14 @@ class NonAutoRegressive(nn.Module):
             text_len_batch,
             audio_len_batch,
         ):
-            text_len_item = int(text_len.item())
-            audio_len_item = int(audio_len.item())
-            item_len = text_len_item + audio_len_item + self.enrolled_codec_len + 1
+            item_len = int((text_len + audio_len).item()) + self.enrolled_codec_len + 1
             embed_list.append(
                 nn.functional.pad(
                     torch.cat(
                         [
-                            text_embed[:text_len_item],
+                            text_embed[:text_len],
                             enrolled_audio_embed,
-                            audio_embed[:audio_len_item],
+                            audio_embed[:audio_len],
                             index_embedding,
                         ],
                         dim=0,

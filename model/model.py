@@ -1,12 +1,15 @@
 import torch
 import wandb
+from encodec.model import EncodecModel
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
 from torch import Tensor
 from torchmetrics.classification import MulticlassAccuracy
 
 from config.config import Config
+from data.audio import codec_to_audio
 from data.datamodule import CollatedBatch
+from data.text import VOCAB_SIZE
 from model.autoregressive import AutoRegressive
 from model.loss import VallELoss
 from model.nonautoregressive import NonAutoRegressive
@@ -17,7 +20,7 @@ class VallE(LightningModule):
         super().__init__()
         self.cfg = cfg
         self.enrolled_codec_len = (
-            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate
+            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate + 1
         )
         self.learning_rate = cfg.train.lr
         self.autoregressive = AutoRegressive(cfg)
@@ -25,7 +28,7 @@ class VallE(LightningModule):
         self.loss = VallELoss(cfg)
         self.acc = MulticlassAccuracy(num_classes=2**cfg.data.codec_bits, top_k=1)
         self.example_input_array = (
-            torch.randint(0, 2**cfg.data.codec_bits, (2, 10)).long(),
+            torch.randint(0, VOCAB_SIZE, (2, 10)).long(),
             torch.randint(
                 0, 2**cfg.data.codec_bits, (2, cfg.data.codec_channels, 30)
             ).long(),
@@ -38,8 +41,24 @@ class VallE(LightningModule):
             torch.tensor([30, 10]),
         )
         self.logger: WandbLogger
+        if cfg.data.sample_rate == 24000:
+            encodec_model = EncodecModel.encodec_model_24khz()
+        elif cfg.data.sample_rate == 48000:
+            encodec_model = EncodecModel.encodec_model_48khz()
+        else:
+            raise NotImplementedError(
+                f"Sample rate {cfg.data.sample_rate} not supported"
+            )
+        self.add_module("encodec_model", encodec_model)
+        self.encodec_model: EncodecModel
 
-    def log_table(self, real_audio: Tensor, gen_audio: Tensor, header: str):
+    def log_table(self, real_codec: Tensor, gen_codec: Tensor, header: str):
+        real_audio = (
+            codec_to_audio(real_codec, self.encodec_model).detach().cpu().numpy()[0]
+        )
+        gen_audio = (
+            codec_to_audio(gen_codec, self.encodec_model).detach().cpu().numpy()[0]
+        )
         self.logger.log_table(
             f"{header}/table",
             columns=["Real", "Generated"],
@@ -123,7 +142,9 @@ class VallE(LightningModule):
 
     def training_step(self, batch: CollatedBatch, *args, **kwargs) -> Tensor:
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)
-        output = self(text, audio, enrolled_audio, text_len, audio_len)
+        output = torch.einsum(
+            "bnlc->bcnl", self(text, audio, enrolled_audio, text_len, audio_len)
+        )
         loss = self.loss(output, audio)
         self.acc(output, audio)
         self.log("train/loss", loss, on_epoch=True, sync_dist=True)
@@ -132,23 +153,27 @@ class VallE(LightningModule):
 
     def validation_step(self, batch: CollatedBatch, batch_idx: int, *args, **kwargs):
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)
-        output = self(text, audio, enrolled_audio, text_len, audio_len)
+        output = torch.einsum(
+            "bnlc->bcnl", self(text, audio, enrolled_audio, text_len, audio_len)
+        )
         loss = self.loss(output, audio)
         self.log("val/loss", loss, on_epoch=True, sync_dist=True)
         self.log("val/acc", self.acc, on_epoch=True, sync_dist=True)
         if batch_idx == 0 and self.device.index == 0:
-            pred = torch.argmax(output[0], dim=-1)
-            self.log_table(audio[0], pred, "val")
+            pred = torch.argmax(output[:1], dim=-1)
+            self.log_table(audio[:1], pred, "val")
 
     def test_step(self, batch: CollatedBatch, batch_idx: int, *args, **kwargs):
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)
-        output = self(text, audio, enrolled_audio, text_len, audio_len)
+        output = torch.einsum(
+            "bnlc->bcnl", self(text, audio, enrolled_audio, text_len, audio_len)
+        )
         loss = self.loss(output, audio)
         self.log("test/loss", loss, on_epoch=True, sync_dist=True)
         self.log("test/acc", self.acc, on_epoch=True, sync_dist=True)
         if batch_idx == 0 and self.device.index == 0:
-            pred = torch.argmax(output[0], dim=-1)
-            self.log_table(audio[0], pred, "val")
+            pred = torch.argmax(output[:1], dim=-1)
+            self.log_table(audio[:1], pred, "val")
 
     def configure_optimizers(self):
         return torch.optim.Adam(
