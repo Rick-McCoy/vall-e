@@ -144,3 +144,4 @@ outputs/
 .vscode/
 checkpoints/
 onnx/
+wandb/

@@ -15,4 +15,4 @@ class TrainConfig:
     num_workers: int = 2
     optimizer: str = "Adam"
     precision: str = "32"
-    project: str = "toy"
+    project: str = "vall-e"

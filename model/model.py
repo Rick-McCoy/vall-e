@@ -1,11 +1,12 @@
+import numpy as np
 import torch
-import wandb
 from encodec.model import EncodecModel
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
 from torch import Tensor
 from torchmetrics.classification import MulticlassAccuracy
 
+import wandb
 from config.config import Config
 from data.audio import codec_to_audio
 from data.datamodule import CollatedBatch
@@ -51,20 +52,33 @@ class VallE(LightningModule):
             )
         self.add_module("encodec_model", encodec_model)
         self.encodec_model: EncodecModel
+        self.rng = np.random.default_rng()
 
     def log_table(self, real_codec: Tensor, gen_codec: Tensor, header: str):
         real_audio = (
-            codec_to_audio(real_codec, self.encodec_model).detach().cpu().numpy()[0]
-        )
+            codec_to_audio(real_codec, self.encodec_model)
+            .squeeze()
+            .detach()
+            .cpu()
+            .numpy()
+        ) * 2**15
         gen_audio = (
-            codec_to_audio(gen_codec, self.encodec_model).detach().cpu().numpy()[0]
-        )
+            codec_to_audio(gen_codec, self.encodec_model)
+            .squeeze()
+            .detach()
+            .cpu()
+            .numpy()
+        ) * 2**15
         self.logger.log_table(
             f"{header}/table",
             columns=["Real", "Generated"],
             data=[
-                wandb.Audio(real_audio, sample_rate=self.cfg.data.sample_rate),
-                wandb.Audio(gen_audio, sample_rate=self.cfg.data.sample_rate),
+                wandb.Audio(
+                    real_audio.astype(np.int16), sample_rate=self.cfg.data.sample_rate
+                ),
+                wandb.Audio(
+                    gen_audio.astype(np.int16), sample_rate=self.cfg.data.sample_rate
+                ),
             ],
         )
 
@@ -76,7 +90,7 @@ class VallE(LightningModule):
         audio_len = data.audio_len.to(self.device)
         return text, text_len, audio, audio_len, enrolled_audio
 
-    def forward(
+    def ar_forward(
         self,
         text: Tensor,
         audio: Tensor,
@@ -107,72 +121,117 @@ class VallE(LightningModule):
                 (0, 0, 0, audio.shape[2] - audio_len_item),
             )
             ar_output_split.append(ar_output)
-        ar_padded_output = torch.stack(ar_output_split, dim=0)
+        return torch.stack(ar_output_split, dim=0)
 
-        nar_output_list = []
-        for i in range(1, self.cfg.data.codec_channels):
-            nar_output_batch = self.nonautoregressive(
-                text,
-                audio[:, :i],
-                enrolled_audio,
-                text_len_batch,
-                audio_len_batch,
-                i,
+    def nar_forward(
+        self,
+        text: Tensor,
+        audio: Tensor,
+        enrolled_audio: Tensor,
+        text_len_batch: Tensor,
+        audio_len_batch: Tensor,
+        channel: int,
+        *args,
+        **kwargs,
+    ) -> Tensor:
+        nar_output_batch = self.nonautoregressive(
+            text,
+            audio[:, :channel],
+            enrolled_audio,
+            text_len_batch,
+            audio_len_batch,
+            channel,
+        )
+        nar_output_split = []
+        for nar_output, text_len, audio_len in zip(
+            nar_output_batch, text_len_batch, audio_len_batch
+        ):
+            text_len_item = int(text_len.item())
+            audio_len_item = int(audio_len.item())
+            nar_output = torch.nn.functional.pad(
+                nar_output[
+                    text_len_item
+                    + self.enrolled_codec_len : text_len_item
+                    + self.enrolled_codec_len
+                    + audio_len_item
+                ],
+                (0, 0, 0, audio.shape[2] - audio_len_item),
             )
-            nar_output_split = []
-            for nar_output, text_len, audio_len in zip(
-                nar_output_batch, text_len_batch, audio_len_batch
-            ):
-                text_len_item = int(text_len.item())
-                audio_len_item = int(audio_len.item())
-                nar_output = torch.nn.functional.pad(
-                    nar_output[
-                        text_len_item
-                        + self.enrolled_codec_len : text_len_item
-                        + self.enrolled_codec_len
-                        + audio_len_item
-                    ],
-                    (0, 0, 0, audio.shape[2] - audio_len_item),
-                )
-                nar_output_split.append(nar_output)
-            nar_output_batch = torch.stack(nar_output_split, dim=0)
-            nar_output_list.append(nar_output_batch)
+            nar_output_split.append(nar_output)
+        return torch.stack(nar_output_split, dim=0)
 
-        return torch.stack([ar_padded_output] + nar_output_list, dim=1)
+    def forward(
+        self,
+        text: Tensor,
+        audio: Tensor,
+        enrolled_audio: Tensor,
+        text_len_batch: Tensor,
+        audio_len_batch: Tensor,
+        *args,
+        **kwargs,
+    ) -> Tensor:
+        ar_output = self.ar_forward(
+            text, audio, enrolled_audio, text_len_batch, audio_len_batch
+        )
+        nar_output_list = []
+        for channel in range(1, self.cfg.data.codec_channels):
+            nar_output_list.append(
+                self.nar_forward(
+                    text,
+                    audio,
+                    enrolled_audio,
+                    text_len_batch,
+                    audio_len_batch,
+                    channel,
+                )
+            )
+
+        return torch.stack([ar_output] + nar_output_list, dim=1)
 
     def training_step(self, batch: CollatedBatch, *args, **kwargs) -> Tensor:
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)
-        output = torch.einsum(
-            "bnlc->bcnl", self(text, audio, enrolled_audio, text_len, audio_len)
+        ar_output = self.ar_forward(text, audio, enrolled_audio, text_len, audio_len)
+        random_channel = self.rng.choice(self.cfg.data.codec_channels - 1) + 1
+        nar_output = self.nar_forward(
+            text, audio, enrolled_audio, text_len, audio_len, random_channel
         )
-        loss = self.loss(output, audio)
-        self.acc(output, audio)
+        output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
+        loss = self.loss(output, audio[:, [0, random_channel]])
+        self.acc(output, audio[:, [0, random_channel]])
         self.log("train/loss", loss, on_epoch=True, sync_dist=True)
         self.log("train/acc", self.acc, on_epoch=True, sync_dist=True)
         return loss
 
     def validation_step(self, batch: CollatedBatch, batch_idx: int, *args, **kwargs):
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)
-        output = torch.einsum(
-            "bnlc->bcnl", self(text, audio, enrolled_audio, text_len, audio_len)
+        ar_output = self.ar_forward(text, audio, enrolled_audio, text_len, audio_len)
+        random_channel = self.rng.choice(self.cfg.data.codec_channels - 1) + 1
+        nar_output = self.nar_forward(
+            text, audio, enrolled_audio, text_len, audio_len, random_channel
         )
-        loss = self.loss(output, audio)
+        output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
+        loss = self.loss(output, audio[:, [0, random_channel]])
+        self.acc(output, audio[:, [0, random_channel]])
         self.log("val/loss", loss, on_epoch=True, sync_dist=True)
         self.log("val/acc", self.acc, on_epoch=True, sync_dist=True)
         if batch_idx == 0 and self.device.index == 0:
-            pred = torch.argmax(output[:1], dim=-1)
+            pred = torch.argmax(output[:1], dim=1)
             self.log_table(audio[:1], pred, "val")
 
     def test_step(self, batch: CollatedBatch, batch_idx: int, *args, **kwargs):
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)
-        output = torch.einsum(
-            "bnlc->bcnl", self(text, audio, enrolled_audio, text_len, audio_len)
+        ar_output = self.ar_forward(text, audio, enrolled_audio, text_len, audio_len)
+        random_channel = self.rng.choice(self.cfg.data.codec_channels - 1) + 1
+        nar_output = self.nar_forward(
+            text, audio, enrolled_audio, text_len, audio_len, random_channel
         )
-        loss = self.loss(output, audio)
+        output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
+        loss = self.loss(output, audio[:, [0, random_channel]])
+        self.acc(output, audio[:, [0, random_channel]])
         self.log("test/loss", loss, on_epoch=True, sync_dist=True)
         self.log("test/acc", self.acc, on_epoch=True, sync_dist=True)
         if batch_idx == 0 and self.device.index == 0:
-            pred = torch.argmax(output[:1], dim=-1)
+            pred = torch.argmax(output[:1], dim=1)
             self.log_table(audio[:1], pred, "val")
 
     def configure_optimizers(self):
