@@ -69,7 +69,7 @@ class VallE(LightningModule):
             fmax=8000,
         )
         gen_mel, _ = mel_energy(
-            real_audio.squeeze(1),
+            gen_audio.squeeze(1),
             n_fft=1024,
             num_mels=80,
             sampling_rate=self.cfg.data.sample_rate,
