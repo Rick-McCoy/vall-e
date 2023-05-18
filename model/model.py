@@ -217,8 +217,8 @@ class VallE(LightningModule):
         output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
         loss = self.loss(output, audio[:, [0, random_channel]])
         self.acc(output, audio[:, [0, random_channel]])
-        self.log("train/loss", loss, on_epoch=True, sync_dist=True)
-        self.log("train/acc", self.acc, on_epoch=True, sync_dist=True)
+        self.log("train/loss", loss, on_step=True)
+        self.log("train/acc", self.acc, on_step=True)
         return loss
 
     def validation_step(self, batch: CollatedBatch, batch_idx: int, *args, **kwargs):
