@@ -5,7 +5,6 @@ from typing import cast
 import hydra
 import torch
 import torch._dynamo.config
-import wandb
 from hydra.core.config_store import ConfigStore
 from lightning import Trainer
 from lightning.pytorch.callbacks import (
@@ -16,6 +15,7 @@ from lightning.pytorch.callbacks import (
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from lightning.pytorch.tuner import Tuner
 
+import wandb
 from config.config import Config
 from config.data.config import DataConfig
 from config.model.config import ModelConfig
@@ -88,10 +88,10 @@ def main(cfg: Config):
     assert precision == "32" or precision == "16-mixed"
     trainer = Trainer(
         accelerator="auto",
-        strategy="ddp",
+        strategy="ddp_find_unused_parameters_true",
         accumulate_grad_batches=cfg.train.acc,
         callbacks=callbacks,
-        # detect_anomaly=True,
+        detect_anomaly=True,
         devices="auto",
         fast_dev_run=cfg.train.fast_dev_run,
         logger=[logger],

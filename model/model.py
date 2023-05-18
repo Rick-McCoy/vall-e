@@ -8,9 +8,10 @@ from torchmetrics.classification import MulticlassAccuracy
 
 import wandb
 from config.config import Config
-from data.audio import codec_to_audio
+from data.audio import codec_to_audio, mel_energy
 from data.datamodule import CollatedBatch
 from data.text import VOCAB_SIZE
+from data.utils import plot_mel_spectrogram
 from model.autoregressive import AutoRegressive
 from model.loss import VallELoss
 from model.nonautoregressive import NonAutoRegressive
@@ -55,30 +56,48 @@ class VallE(LightningModule):
         self.rng = np.random.default_rng()
 
     def log_table(self, real_codec: Tensor, gen_codec: Tensor, header: str):
-        real_audio = (
-            codec_to_audio(real_codec, self.encodec_model)
-            .squeeze()
-            .detach()
-            .cpu()
-            .numpy()
-        ) * 2**15
-        gen_audio = (
-            codec_to_audio(gen_codec, self.encodec_model)
-            .squeeze()
-            .detach()
-            .cpu()
-            .numpy()
-        ) * 2**15
+        real_audio = codec_to_audio(real_codec, self.encodec_model)
+        gen_audio = codec_to_audio(gen_codec, self.encodec_model)
+        real_mel, _ = mel_energy(
+            real_audio.squeeze(1),
+            n_fft=1024,
+            num_mels=80,
+            sampling_rate=self.cfg.data.sample_rate,
+            hop_size=256,
+            win_size=1024,
+            fmin=0,
+            fmax=8000,
+        )
+        gen_mel, _ = mel_energy(
+            real_audio.squeeze(1),
+            n_fft=1024,
+            num_mels=80,
+            sampling_rate=self.cfg.data.sample_rate,
+            hop_size=256,
+            win_size=1024,
+            fmin=0,
+            fmax=8000,
+        )
+        real_audio_cpu = real_audio.squeeze().detach().cpu() * 2**15
+        gen_audio_cpu = gen_audio.squeeze().detach().cpu() * 2**15
+        real_audio_numpy = real_audio_cpu.numpy().astype(np.int16)
+        gen_audio_numpy = gen_audio_cpu.numpy().astype(np.int16)
+        real_mel_image = plot_mel_spectrogram(real_mel.squeeze().detach().cpu().numpy())
+        gen_mel_image = plot_mel_spectrogram(gen_mel.squeeze().detach().cpu().numpy())
         self.logger.log_table(
             f"{header}/table",
-            columns=["Real", "Generated"],
+            columns=["Audio", "Mel"],
             data=[
-                wandb.Audio(
-                    real_audio.astype(np.int16), sample_rate=self.cfg.data.sample_rate
-                ),
-                wandb.Audio(
-                    gen_audio.astype(np.int16), sample_rate=self.cfg.data.sample_rate
-                ),
+                [
+                    wandb.Audio(
+                        real_audio_numpy, sample_rate=self.cfg.data.sample_rate
+                    ),
+                    wandb.Image(real_mel_image),
+                ],
+                [
+                    wandb.Audio(gen_audio_numpy, sample_rate=self.cfg.data.sample_rate),
+                    wandb.Image(gen_mel_image),
+                ],
             ],
         )
 
@@ -215,8 +234,11 @@ class VallE(LightningModule):
         self.log("val/loss", loss, on_epoch=True, sync_dist=True)
         self.log("val/acc", self.acc, on_epoch=True, sync_dist=True)
         if batch_idx == 0 and self.device.index == 0:
-            pred = torch.argmax(output[:1], dim=1)
-            self.log_table(audio[:1], pred, "val")
+            with torch.no_grad():
+                pred = self(text, audio, enrolled_audio, text_len, audio_len).argmax(
+                    dim=-1
+                )
+            self.log_table(audio[:1], pred[:1], "val")
 
     def test_step(self, batch: CollatedBatch, batch_idx: int, *args, **kwargs):
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)
@@ -231,8 +253,11 @@ class VallE(LightningModule):
         self.log("test/loss", loss, on_epoch=True, sync_dist=True)
         self.log("test/acc", self.acc, on_epoch=True, sync_dist=True)
         if batch_idx == 0 and self.device.index == 0:
-            pred = torch.argmax(output[:1], dim=1)
-            self.log_table(audio[:1], pred, "val")
+            with torch.no_grad():
+                pred = self(text, audio, enrolled_audio, text_len, audio_len).argmax(
+                    dim=-1
+                )
+            self.log_table(audio[:1], pred[:1], "test")
 
     def configure_optimizers(self):
         return torch.optim.Adam(

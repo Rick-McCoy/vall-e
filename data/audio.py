@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional, Tuple
 
 import librosa
 import numpy as np
@@ -95,3 +96,45 @@ def codec_to_audio(codec: torch.Tensor, encodec_model: EncodecModel) -> torch.Te
             segments = torch.split(codec, 150, dim=-1)
             frames: list[EncodedFrame] = [(segment, None) for segment in segments]
         return encodec_model.decode(frames)
+
+
+def mel_energy(
+    audio: torch.Tensor,
+    n_fft: int,
+    num_mels: int,
+    sampling_rate: int,
+    hop_size: int,
+    win_size: int,
+    fmin: float,
+    fmax: Optional[float] = None,
+    center=False,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    with torch.no_grad():
+        pad_size = (n_fft - hop_size) // 2
+        audio = torch.nn.functional.pad(audio, (pad_size, pad_size), "reflect")
+        spec = torch.stft(
+            audio,
+            n_fft=n_fft,
+            hop_length=hop_size,
+            win_length=win_size,
+            window=torch.hann_window(win_size).to(audio),
+            center=center,
+            pad_mode="reflect",
+            normalized=False,
+            onesided=True,
+            return_complex=True,
+        )
+        spec = torch.abs(spec)
+        energy = torch.norm(spec, dim=1)
+        mel_basis = torch.from_numpy(
+            librosa.filters.mel(
+                sr=sampling_rate,
+                n_fft=n_fft,
+                n_mels=num_mels,
+                fmin=fmin,
+                fmax=fmax,
+            )
+        ).to(spec)
+        mel_spec = torch.einsum("ij,bjk->bik", mel_basis, spec)
+        mel_spec = torch.log(torch.clamp(mel_spec, min=1e-5))
+        return mel_spec, energy

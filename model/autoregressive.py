@@ -95,7 +95,7 @@ class AutoRegressive(nn.Module):
         mask = torch.stack(mask_list, dim=0).repeat_interleave(
             repeats=self.cfg.model.nhead, dim=0
         )
-        embed = torch.stack(embed_list, dim=0).transpose(0, 1)
+        embed = torch.einsum("blc->lbc", torch.stack(embed_list, dim=0))
         transformer_output = self.transformer_decoder(embed, embed, tgt_mask=mask)
-        output = self.linear(transformer_output.transpose(0, 1))
+        output = self.linear(torch.einsum("lbc->blc", transformer_output))
         return output

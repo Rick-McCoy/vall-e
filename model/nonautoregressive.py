@@ -112,11 +112,11 @@ class NonAutoRegressive(nn.Module):
                 )
             )
 
-        embed = torch.stack(embed_list, dim=0).transpose(0, 1)
+        embed = torch.einsum("blc->lbc", torch.stack(embed_list, dim=0))
         transformer_output = self.transformer_decoder(embed, embed)
         for i, linear in enumerate(self.linears):
             if i == index - 1:
-                output = linear(transformer_output.transpose(0, 1))
+                output = linear(torch.einsum("lbc->blc", transformer_output))
                 break
         else:
             raise ValueError(f"index {index} is out of range")
