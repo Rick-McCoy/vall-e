@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import partial
 from typing import Optional
 
 import numpy as np
@@ -9,6 +10,7 @@ from torch.utils.data.dataloader import DataLoader
 
 from config.config import Config
 from data.dataset import Batch, VallEDataset
+from data.text import CHAR_TO_CODE
 
 
 @dataclass
@@ -18,34 +20,59 @@ class CollatedBatch:
     audio: torch.Tensor
     audio_len: torch.Tensor
     enrolled_audio: torch.Tensor
+    enrolled_audio_len: torch.Tensor
 
 
-def collate_fn(batches: list[Batch]) -> CollatedBatch:
+def collate_fn(batches: list[Batch], codec_pad: int) -> CollatedBatch:
     text_len = [batch.text.shape[0] for batch in batches]
     audio_len = [batch.audio.shape[1] for batch in batches]
+    enrolled_audio_len = [batch.enrolled_audio.shape[1] for batch in batches]
     max_text_len = max(text_len)
     max_audio_len = max(audio_len)
+    max_enrolled_audio_len = max(enrolled_audio_len)
     text = np.stack(
         [
-            np.pad(batch.text, (0, max_text_len - text_len))
+            np.pad(
+                batch.text,
+                (0, max_text_len - text_len),
+                mode="constant",
+                constant_values=CHAR_TO_CODE["<PAD>"],
+            )
             for batch, text_len in zip(batches, text_len)
         ],
         axis=0,
     )
     audio = np.stack(
         [
-            np.pad(batch.audio, ((0, 0), (0, max_audio_len - audio_len)))
+            np.pad(
+                batch.audio,
+                ((0, 0), (0, max_audio_len - audio_len)),
+                mode="constant",
+                constant_values=codec_pad,
+            )
             for batch, audio_len in zip(batches, audio_len)
         ],
         axis=0,
     )
-    enrolled_audio = np.stack([batch.enrolled_audio for batch in batches], axis=0)
+    enrolled_audio = np.stack(
+        [
+            np.pad(
+                batch.enrolled_audio,
+                ((0, 0), (0, max_enrolled_audio_len - audio_len)),
+                mode="constant",
+                constant_values=codec_pad,
+            )
+            for batch, audio_len in zip(batches, enrolled_audio_len)
+        ],
+        axis=0,
+    )
     return CollatedBatch(
         text=torch.from_numpy(text).long(),
         text_len=torch.from_numpy(np.array(text_len)).long(),
         audio=torch.from_numpy(audio).long(),
         audio_len=torch.from_numpy(np.array(audio_len)).long(),
         enrolled_audio=torch.from_numpy(enrolled_audio).long(),
+        enrolled_audio_len=torch.from_numpy(enrolled_audio_len).long(),
     )
 
 
@@ -54,6 +81,7 @@ class VallEDataModule(LightningDataModule):
         super().__init__()
         self.cfg = cfg
         self.batch_size = cfg.train.batch_size
+        self.codec_pad = 2**cfg.data.codec_channels + 1
 
     def prepare_data(self) -> None:
         pass
@@ -75,7 +103,7 @@ class VallEDataModule(LightningDataModule):
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.cfg.train.num_workers,
-            collate_fn=collate_fn,
+            collate_fn=partial(collate_fn, codec_pad=self.codec_pad),
             pin_memory=True,
         )
 
@@ -85,7 +113,7 @@ class VallEDataModule(LightningDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.cfg.train.num_workers,
-            collate_fn=collate_fn,
+            collate_fn=partial(collate_fn, codec_pad=self.codec_pad),
             pin_memory=True,
         )
 
@@ -95,6 +123,6 @@ class VallEDataModule(LightningDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.cfg.train.num_workers,
-            collate_fn=collate_fn,
+            collate_fn=partial(collate_fn, codec_pad=self.codec_pad),
             pin_memory=True,
         )

@@ -1,16 +1,20 @@
 import numpy as np
 
-char_to_code = {}
-# ASCII (128 characters)
-char_to_code.update({chr(i): i for i in range(128)})
-# Hangul Jamo (Initial, 19 characters)
-char_to_code.update({chr(i): i + 128 - 0x1100 for i in range(0x1100, 0x1113)})
-# Hangul Jamo (Medial, 21 characters)
-char_to_code.update({chr(i): i + 147 - 0x1161 for i in range(0x1161, 0x1176)})
-# Hangul Jamo (Final, 28 characters)
-char_to_code.update({chr(i): i + 168 - 0x11A8 for i in range(0x11A8, 0x11C3)})
-
-VOCAB_SIZE = len(char_to_code)
+ASCII = list(chr(i) for i in range(128))
+HANGUL_JAMO_INITIAL = list(chr(i) for i in range(0x1100, 0x1113))
+HANGUL_JAMO_MEDIAL = list(chr(i) for i in range(0x1161, 0x1176))
+HANGUL_JAMO_FINAL = list(chr(i) for i in range(0x11A8, 0x11C3))
+SPECIAL_CHARACTERS = ["<PAD>", "<SOS>", "<EOS>", "<UNK>"]
+CHARACTERS = (
+    ASCII
+    + HANGUL_JAMO_INITIAL
+    + HANGUL_JAMO_MEDIAL
+    + HANGUL_JAMO_FINAL
+    + SPECIAL_CHARACTERS
+)
+CHAR_TO_CODE = {char: i for i, char in enumerate(CHARACTERS)}
+CODE_TO_CHAR = {i: char for i, char in enumerate(CHARACTERS)}
+VOCAB_SIZE = len(CHARACTERS)
 
 
 def split_hangul_jamo(text: str) -> list[str]:
@@ -101,6 +105,9 @@ def encode_text(text: str) -> np.ndarray:
 
     code = []
     for char in split_hangul_jamo(text):
-        code.append(char_to_code[char])
+        if char in CHAR_TO_CODE:
+            code.append(CHAR_TO_CODE[char])
+        else:
+            code.append(CHAR_TO_CODE["<UNK>"])
 
     return np.array(code, dtype=np.int64)
