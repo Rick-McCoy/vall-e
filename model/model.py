@@ -4,7 +4,7 @@ from encodec.model import EncodecModel
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
 from torch import Tensor
-from torch.optim.lr_scheduler import _LRScheduler
+from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
 
 import wandb
@@ -221,7 +221,7 @@ class VallE(LightningModule):
         self.log("train/acc", self.acc, on_step=True)
         if self.device.index == 0:
             scheduler = self.lr_schedulers()
-            assert isinstance(scheduler, _LRScheduler)
+            assert isinstance(scheduler, LRScheduler)
             self.log("train/lr", scheduler.get_last_lr()[0], on_step=True)
         return loss
 
@@ -252,9 +252,9 @@ class VallE(LightningModule):
         self.log("val/acc", self.acc, on_epoch=True, sync_dist=True)
         if batch_idx == 0 and self.device.index == 0:
             with torch.no_grad():
-                pred = self(text, audio, enrolled_audio, text_len, audio_len).argmax(
-                    dim=-1
-                )
+                pred = self(
+                    text, audio, enrolled_audio, text_len, audio_len, enrolled_audio_len
+                ).argmax(dim=-1)
             self.log_table(audio[:1, : audio_len[0]], pred[:1, : audio_len[0]], "val")
 
     def test_step(self, batch: CollatedBatch, batch_idx: int):
@@ -284,9 +284,9 @@ class VallE(LightningModule):
         self.log("test/acc", self.acc, on_epoch=True, sync_dist=True)
         if batch_idx == 0 and self.device.index == 0:
             with torch.no_grad():
-                pred = self(text, audio, enrolled_audio, text_len, audio_len).argmax(
-                    dim=-1
-                )
+                pred = self(
+                    text, audio, enrolled_audio, text_len, audio_len, enrolled_audio_len
+                ).argmax(dim=-1)
             self.log_table(audio[:1, : audio_len[0]], pred[:1, : audio_len[0]], "test")
 
     def configure_optimizers(self):
