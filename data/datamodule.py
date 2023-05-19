@@ -72,7 +72,7 @@ def collate_fn(batches: list[Batch], codec_pad: int) -> CollatedBatch:
         audio=torch.from_numpy(audio).long(),
         audio_len=torch.from_numpy(np.array(audio_len)).long(),
         enrolled_audio=torch.from_numpy(enrolled_audio).long(),
-        enrolled_audio_len=torch.from_numpy(enrolled_audio_len).long(),
+        enrolled_audio_len=torch.from_numpy(np.array(enrolled_audio_len)).long(),
     )
 
 
