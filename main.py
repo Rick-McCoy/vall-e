@@ -95,7 +95,7 @@ def main(cfg: Config):
         devices="auto",
         fast_dev_run=cfg.train.fast_dev_run,
         logger=[logger],
-        max_epochs=-1,
+        max_steps=cfg.train.max_steps,
         num_sanity_val_steps=2,
         precision=precision,
     )

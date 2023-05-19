@@ -4,6 +4,7 @@ from encodec.model import EncodecModel
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
 from torch import Tensor
+from torch.optim.lr_scheduler import _LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
 
 import wandb
@@ -24,7 +25,7 @@ class VallE(LightningModule):
         self.enrolled_codec_len = (
             self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate + 1
         )
-        self.learning_rate = cfg.train.lr
+        self.lr = cfg.train.lr
         self.autoregressive = AutoRegressive(cfg)
         self.nonautoregressive = NonAutoRegressive(cfg)
         self.loss = VallELoss(cfg)
@@ -113,31 +114,21 @@ class VallE(LightningModule):
         self,
         text: Tensor,
         audio: Tensor,
-        enrolled_audio: Tensor,
         text_len_batch: Tensor,
         audio_len_batch: Tensor,
         *args,
         **kwargs,
     ) -> Tensor:
         ar_output_batch = self.autoregressive(
-            text, audio[:, 0], enrolled_audio[:, 0], text_len_batch, audio_len_batch
+            text, audio[:, 0], text_len_batch, audio_len_batch
         )
         ar_output_split = []
         for ar_output, text_len, audio_len in zip(
             ar_output_batch, text_len_batch, audio_len_batch
         ):
-            text_len_item = int(text_len.item())
-            audio_len_item = int(audio_len.item())
             ar_output = torch.nn.functional.pad(
-                ar_output[
-                    text_len_item
-                    + self.enrolled_codec_len
-                    - 1 : text_len_item
-                    + self.enrolled_codec_len
-                    + audio_len_item
-                    - 1
-                ],
-                (0, 0, 0, audio.shape[2] - audio_len_item),
+                ar_output[text_len - 1 : text_len + audio_len - 1],
+                (0, 0, 0, audio.shape[2] - int(audio_len.item())),
             )
             ar_output_split.append(ar_output)
         return torch.stack(ar_output_split, dim=0)
@@ -189,9 +180,7 @@ class VallE(LightningModule):
         *args,
         **kwargs,
     ) -> Tensor:
-        ar_output = self.ar_forward(
-            text, audio, enrolled_audio, text_len_batch, audio_len_batch
-        )
+        ar_output = self.ar_forward(text, audio, text_len_batch, audio_len_batch)
         nar_output_list = []
         for channel in range(1, self.cfg.data.codec_channels):
             nar_output_list.append(
@@ -209,7 +198,7 @@ class VallE(LightningModule):
 
     def training_step(self, batch: CollatedBatch, *args, **kwargs) -> Tensor:
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)
-        ar_output = self.ar_forward(text, audio, enrolled_audio, text_len, audio_len)
+        ar_output = self.ar_forward(text, audio, text_len, audio_len)
         random_channel = self.rng.choice(self.cfg.data.codec_channels - 1) + 1
         nar_output = self.nar_forward(
             text, audio, enrolled_audio, text_len, audio_len, random_channel
@@ -219,11 +208,15 @@ class VallE(LightningModule):
         self.acc(output, audio[:, [0, random_channel]])
         self.log("train/loss", loss, on_step=True)
         self.log("train/acc", self.acc, on_step=True)
+        if self.device.index == 0:
+            scheduler = self.lr_schedulers()
+            assert isinstance(scheduler, _LRScheduler)
+            self.log("train/lr", scheduler.get_last_lr()[0], on_step=True)
         return loss
 
     def validation_step(self, batch: CollatedBatch, batch_idx: int, *args, **kwargs):
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)
-        ar_output = self.ar_forward(text, audio, enrolled_audio, text_len, audio_len)
+        ar_output = self.ar_forward(text, audio, text_len, audio_len)
         random_channel = self.rng.choice(self.cfg.data.codec_channels - 1) + 1
         nar_output = self.nar_forward(
             text, audio, enrolled_audio, text_len, audio_len, random_channel
@@ -238,11 +231,11 @@ class VallE(LightningModule):
                 pred = self(text, audio, enrolled_audio, text_len, audio_len).argmax(
                     dim=-1
                 )
-            self.log_table(audio[:1], pred[:1], "val")
+            self.log_table(audio[:1, : audio_len[0]], pred[:1, : audio_len[0]], "val")
 
     def test_step(self, batch: CollatedBatch, batch_idx: int, *args, **kwargs):
         text, text_len, audio, audio_len, enrolled_audio = self.parse_batch(batch)
-        ar_output = self.ar_forward(text, audio, enrolled_audio, text_len, audio_len)
+        ar_output = self.ar_forward(text, audio, text_len, audio_len)
         random_channel = self.rng.choice(self.cfg.data.codec_channels - 1) + 1
         nar_output = self.nar_forward(
             text, audio, enrolled_audio, text_len, audio_len, random_channel
@@ -257,9 +250,23 @@ class VallE(LightningModule):
                 pred = self(text, audio, enrolled_audio, text_len, audio_len).argmax(
                     dim=-1
                 )
-            self.log_table(audio[:1], pred[:1], "test")
+            self.log_table(audio[:1, : audio_len[0]], pred[:1, : audio_len[0]], "test")
 
     def configure_optimizers(self):
-        return torch.optim.Adam(
-            params=self.parameters(), lr=self.learning_rate, amsgrad=True
+        optimizer = torch.optim.AdamW(params=self.parameters(), lr=self.lr)
+
+        def lr_scale(epoch: int) -> float:
+            return min(
+                self.global_step / self.cfg.train.warmup_steps,
+                (self.cfg.train.max_steps - self.global_step)
+                / (self.cfg.train.max_steps - self.cfg.train.warmup_steps),
+            )
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lr_lambda=lr_scale,
         )
+
+        return [optimizer], [
+            {"scheduler": scheduler, "interval": "step", "frequency": 1}
+        ]

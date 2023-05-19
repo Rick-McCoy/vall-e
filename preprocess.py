@@ -65,7 +65,9 @@ class PreprocessDataset(Dataset):
             print(f"Audio file {wav_path} does not exist")
             return None
         audio = torch.from_numpy(
-            load_audio(wav_path, self.cfg.data.sample_rate, self.cfg.data.channels)
+            load_audio(
+                wav_path, self.cfg.data.sample_rate, self.cfg.data.audio_channels
+            )
         )
         codec_path = Path(str(wav_path).replace("source", "codec")).with_suffix(".npy")
         return (
