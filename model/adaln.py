@@ -8,7 +8,9 @@ class AdaptiveLayerNorm(nn.Module):
         self.normalized_shape = (d_model,)
         self.eps = 1e-5
         self.weight_embedding = nn.Embedding(n_channels, embedding_dim=d_model)
+        self.weight_embedding.weight.data.fill_(0)
         self.bias_embedding = nn.Embedding(n_channels, embedding_dim=d_model)
+        self.bias_embedding.weight.data.fill_(0)
 
     def forward(self, data: Tensor, layer: int):
         weight = self.weight_embedding.weight[layer].exp()

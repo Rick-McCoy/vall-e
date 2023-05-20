@@ -16,7 +16,7 @@ class AutoRegressive(nn.Module):
             embedding_dim=cfg.model.hidden_dim,
         )
         self.audio_embedding = nn.Embedding(
-            num_embeddings=2**cfg.data.codec_bits,
+            num_embeddings=2**cfg.data.codec_bits + 2,
             embedding_dim=cfg.model.hidden_dim,
         )
         self.positional_encoding = PositionalEncoding(
@@ -30,12 +30,13 @@ class AutoRegressive(nn.Module):
                 dim_feedforward=cfg.model.dim_feedforward,
                 dropout=cfg.model.dropout,
                 activation=cfg.model.activation,
+                norm_first=True,
             ),
             num_layers=cfg.model.num_layers,
         )
         self.linear = nn.Linear(
             in_features=cfg.model.hidden_dim,
-            out_features=2**cfg.data.codec_bits,
+            out_features=2**cfg.data.codec_bits + 2,
             bias=False,
         )
         self.linear.weight = self.audio_embedding.weight
@@ -52,12 +53,13 @@ class AutoRegressive(nn.Module):
 
         max_len = int((text_len_batch + audio_len_batch).max().item())
         embed_list = []
-        mask = torch.zeros(
+        mask = torch.full(
             (
                 text.shape[0],
                 max_len,
                 max_len,
-            )  # pyright: ignore [reportGeneralTypeIssues]
+            ),
+            fill_value=-float("inf"),
         ).to(text.device)
         for text_embed, audio_embed, text_len, audio_len, mask_item in zip(
             text_embedding, audio_embedding, text_len_batch, audio_len_batch, mask

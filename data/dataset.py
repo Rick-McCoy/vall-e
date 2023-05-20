@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from config.config import Config
 from data.audio import load_codec
 from data.text import encode_text
-from data.utils import load_metadata
+from utils.data import load_metadata
 
 
 @dataclass

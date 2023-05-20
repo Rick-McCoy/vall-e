@@ -13,10 +13,8 @@ def load_metadata(
     The speaker column is used as the speaker list.
     The text column is used as the text list.
     The codec_path column is used as the codec path list.
-
     Args:
         csv_path (Path): Path to CSV file.
-
     Returns:
         speaker_list (pd.Series[str]): Series of speakers.
         text_list (pd.Series[str]): Series of texts.

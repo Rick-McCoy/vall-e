@@ -123,13 +123,15 @@ class NonAutoRegressive(nn.Module):
         )
         self.shared_audio_weight = nn.Parameter(
             torch.randn(
-                cfg.data.codec_channels, 2**cfg.data.codec_bits, cfg.model.hidden_dim
+                cfg.data.codec_channels,
+                2**cfg.data.codec_bits + 2,
+                cfg.model.hidden_dim,
             )
         )
         self.register_buffer(
             "offset",
             torch.arange(0, cfg.data.codec_channels).reshape(1, -1, 1)
-            * 2**cfg.data.codec_bits,
+            * (2**cfg.data.codec_bits + 2),
         )
         self.offset: Tensor
         self.index_embedding_weight = nn.Parameter(
@@ -146,6 +148,7 @@ class NonAutoRegressive(nn.Module):
                 dim_feedforward=cfg.model.dim_feedforward,
                 dropout=cfg.model.dropout,
                 activation=cfg.model.activation,
+                batch_first=True,
                 norm_first=True,
             ),
             num_layers=cfg.model.num_layers,
@@ -202,8 +205,9 @@ class NonAutoRegressive(nn.Module):
                 ),
             )
 
-        embed = torch.nn.utils.rnn.pad_sequence(embed_list)
+        embed = torch.nn.utils.rnn.pad_sequence(embed_list, batch_first=True)
         transformer_output = self.transformer_decoder(embed, embed, layer=index)
-        return torch.einsum(
-            "lbc,dc->bld", transformer_output, self.shared_audio_weight[index]
+        output = torch.einsum(
+            "blc,dc->bld", transformer_output, self.shared_audio_weight[index]
         )
+        return output

@@ -81,7 +81,7 @@ class VallEDataModule(LightningDataModule):
         super().__init__()
         self.cfg = cfg
         self.batch_size = cfg.train.batch_size
-        self.codec_pad = 2**cfg.data.codec_channels + 1
+        self.codec_pad = 2**cfg.data.codec_bits + 1
 
     def prepare_data(self) -> None:
         pass

@@ -5,7 +5,9 @@ import librosa
 import numpy as np
 import soundfile as sf
 import torch
+
 from encodec.model import EncodecModel, EncodedFrame
+from encodec.modules.lstm import SLSTM
 
 
 def load_audio(path: Path, target_sr: int, channels: int) -> np.ndarray:
@@ -95,6 +97,12 @@ def codec_to_audio(codec: torch.Tensor, encodec_model: EncodecModel) -> torch.Te
         else:
             segments = torch.split(codec, 150, dim=-1)
             frames: list[EncodedFrame] = [(segment, None) for segment in segments]
+        for module in encodec_model.encoder.model:
+            if isinstance(module, SLSTM):
+                module.lstm.flatten_parameters()
+        for module in encodec_model.decoder.model:
+            if isinstance(module, SLSTM):
+                module.lstm.flatten_parameters()
         return encodec_model.decode(frames)
 
 

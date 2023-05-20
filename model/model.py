@@ -1,21 +1,25 @@
+from typing import cast
+
 import numpy as np
 import torch
-import wandb
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
 from torch import Tensor
 from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
 
+import wandb
 from config.config import Config
 from data.audio import codec_to_audio, mel_energy
 from data.datamodule import CollatedBatch
-from data.text import VOCAB_SIZE
-from data.utils import plot_mel_spectrogram
+from data.text import CHAR_TO_CODE, VOCAB_SIZE
 from encodec.model import EncodecModel
 from model.autoregressive import AutoRegressive
 from model.loss import VallELoss
 from model.nonautoregressive import NonAutoRegressive
+from utils.data import plot_mel_spectrogram
+from utils.model import remove_weight_norm
+from utils.utils import unpad_sequence
 
 
 class VallE(LightningModule):
@@ -23,11 +27,28 @@ class VallE(LightningModule):
         super().__init__()
         self.cfg = cfg
         self.codec_channels = cfg.data.codec_channels
+        self.register_buffer(
+            "text_eos", torch.tensor([CHAR_TO_CODE["<EOS>"]], dtype=torch.long)
+        )
+        self.text_eos: torch.Tensor
+        self.text_pad = CHAR_TO_CODE["<PAD>"]
+        self.register_buffer(
+            "codec_eos",
+            torch.full(
+                (1, cfg.data.codec_channels), 2**cfg.data.codec_bits, dtype=torch.long
+            ),
+        )
+        self.codec_eos: torch.Tensor
+        self.codec_pad = 2**cfg.data.codec_bits + 1
         self.lr = cfg.train.lr
         self.autoregressive = AutoRegressive(cfg)
         self.nonautoregressive = NonAutoRegressive(cfg)
         self.loss = VallELoss(cfg)
-        self.acc = MulticlassAccuracy(num_classes=2**cfg.data.codec_bits, top_k=1)
+        self.acc = MulticlassAccuracy(
+            num_classes=2**cfg.data.codec_bits + 2,
+            top_k=1,
+            ignore_index=2**cfg.data.codec_bits + 1,
+        )
         self.example_input_array = (
             torch.randint(0, VOCAB_SIZE, (2, 10)).long(),
             torch.randint(
@@ -44,13 +65,20 @@ class VallE(LightningModule):
         )
         self.logger: WandbLogger
         if cfg.data.sample_rate == 24000:
-            self.encodec_model = EncodecModel.encodec_model_24khz()
+            encodec_model = EncodecModel.encodec_model_24khz()
         elif cfg.data.sample_rate == 48000:
-            self.encodec_model = EncodecModel.encodec_model_48khz()
+            encodec_model = EncodecModel.encodec_model_48khz()
         else:
             raise NotImplementedError(
                 f"Sample rate {cfg.data.sample_rate} not supported"
             )
+        remove_weight_norm(encodec_model)
+        self.encodec_model = cast(
+            EncodecModel,
+            torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
+                encodec_model
+            ),
+        )
         self.rng = np.random.default_rng()
 
     def log_table(self, real_codec: Tensor, gen_codec: Tensor, header: str):
@@ -108,6 +136,24 @@ class VallE(LightningModule):
         enrolled_audio_len = data.enrolled_audio_len.to(self.device)
         return text, text_len, audio, audio_len, enrolled_audio, enrolled_audio_len
 
+    def add_text_eos(self, text: torch.Tensor, text_len: torch.Tensor):
+        text_list = unpad_sequence(text, text_len, batch_first=True)
+        text_list = [torch.cat([t, self.text_eos]) for t in text_list]
+        text_len = text_len + 1
+        text = torch.nn.utils.rnn.pad_sequence(
+            text_list, batch_first=True, padding_value=float(self.text_pad)
+        )
+        return text, text_len
+
+    def add_codec_eos(self, codec: torch.Tensor, codec_len: torch.Tensor):
+        codec_list = unpad_sequence(codec.transpose(1, 2), codec_len, batch_first=True)
+        codec_list = [torch.cat([t, self.codec_eos]) for t in codec_list]
+        codec_len = codec_len + 1
+        codec = torch.nn.utils.rnn.pad_sequence(
+            codec_list, batch_first=True, padding_value=float(self.codec_pad)
+        )
+        return codec.transpose(1, 2), codec_len
+
     def ar_forward(
         self,
         text: Tensor,
@@ -115,6 +161,7 @@ class VallE(LightningModule):
         text_len_batch: Tensor,
         audio_len_batch: Tensor,
     ) -> Tensor:
+        text, text_len_batch = self.add_text_eos(text, text_len_batch)
         ar_output_batch = self.autoregressive(
             text, audio[:, 0], text_len_batch, audio_len_batch
         )
@@ -122,12 +169,10 @@ class VallE(LightningModule):
         for ar_output, text_len, audio_len in zip(
             ar_output_batch, text_len_batch, audio_len_batch
         ):
-            ar_output = torch.nn.functional.pad(
-                ar_output[text_len - 1 : text_len + audio_len - 1],
-                (0, 0, 0, audio.shape[2] - int(audio_len.item())),
-            )
-            ar_output_split.append(ar_output)
-        return torch.stack(ar_output_split, dim=0)
+            ar_output_split.append(ar_output[text_len - 1 : text_len + audio_len])
+        return torch.nn.utils.rnn.pad_sequence(
+            ar_output_split, batch_first=True, padding_value=float(self.codec_pad)
+        )
 
     def nar_forward(
         self,
@@ -139,6 +184,10 @@ class VallE(LightningModule):
         enrolled_audio_len_batch: Tensor,
         channel: int,
     ) -> Tensor:
+        text, text_len_batch = self.add_text_eos(text, text_len_batch)
+        enrolled_audio, enrolled_audio_len_batch = self.add_codec_eos(
+            enrolled_audio, enrolled_audio_len_batch
+        )
         nar_output_batch = self.nonautoregressive(
             text,
             audio[:, :channel],
@@ -152,17 +201,18 @@ class VallE(LightningModule):
         for nar_output, text_len, audio_len, enrolled_audio_len in zip(
             nar_output_batch, text_len_batch, audio_len_batch, enrolled_audio_len_batch
         ):
-            nar_output = torch.nn.functional.pad(
+            nar_output_split.append(
                 nar_output[
                     text_len
                     + enrolled_audio_len : text_len
                     + enrolled_audio_len
                     + audio_len
-                ],
-                (0, 0, 0, audio.shape[2] - int(audio_len.item())),
+                    + 1
+                ]
             )
-            nar_output_split.append(nar_output)
-        return torch.stack(nar_output_split, dim=0)
+        return torch.nn.utils.rnn.pad_sequence(
+            nar_output_split, batch_first=True, padding_value=float(self.codec_pad)
+        )
 
     def forward(
         self,
@@ -211,8 +261,9 @@ class VallE(LightningModule):
             random_channel,
         )
         output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
-        loss = self.loss(output, audio[:, [0, random_channel]])
-        self.acc(output, audio[:, [0, random_channel]])
+        eos_audio, _ = self.add_codec_eos(audio, audio_len)
+        loss = self.loss(output, eos_audio[:, [0, random_channel]])
+        self.acc(output, eos_audio[:, [0, random_channel]])
         self.log("train/loss", loss, on_step=True)
         self.log("train/acc", self.acc, on_step=True)
         if self.device.index == 0:
@@ -242,16 +293,21 @@ class VallE(LightningModule):
             random_channel,
         )
         output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
-        loss = self.loss(output, audio[:, [0, random_channel]])
-        self.acc(output, audio[:, [0, random_channel]])
+        eos_audio, _ = self.add_codec_eos(audio, audio_len)
+        loss = self.loss(output, eos_audio[:, [0, random_channel]])
+        self.acc(output, eos_audio[:, [0, random_channel]])
         self.log("val/loss", loss, on_epoch=True, sync_dist=True)
         self.log("val/acc", self.acc, on_epoch=True, sync_dist=True)
         if batch_idx == 0 and self.device.index == 0:
             with torch.no_grad():
                 pred = self(
                     text, audio, enrolled_audio, text_len, audio_len, enrolled_audio_len
-                ).argmax(dim=-1)
-            self.log_table(audio[:1, : audio_len[0]], pred[:1, : audio_len[0]], "val")
+                )[..., : self.codec_pad - 1].argmax(dim=-1)
+            longest_audio_index = audio_len.argmax()
+            longest_audio_len = audio_len[longest_audio_index]
+            longest_audio = audio[longest_audio_index, :longest_audio_len].unsqueeze(0)
+            longest_pred = pred[longest_audio_index, :longest_audio_len].unsqueeze(0)
+            self.log_table(longest_audio, longest_pred, "val")
 
     def test_step(self, batch: CollatedBatch, batch_idx: int):
         (
@@ -274,16 +330,21 @@ class VallE(LightningModule):
             random_channel,
         )
         output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
-        loss = self.loss(output, audio[:, [0, random_channel]])
-        self.acc(output, audio[:, [0, random_channel]])
+        eos_audio, _ = self.add_codec_eos(audio, audio_len)
+        loss = self.loss(output, eos_audio[:, [0, random_channel]])
+        self.acc(output, eos_audio[:, [0, random_channel]])
         self.log("test/loss", loss, on_epoch=True, sync_dist=True)
         self.log("test/acc", self.acc, on_epoch=True, sync_dist=True)
         if batch_idx == 0 and self.device.index == 0:
             with torch.no_grad():
                 pred = self(
                     text, audio, enrolled_audio, text_len, audio_len, enrolled_audio_len
-                ).argmax(dim=-1)
-            self.log_table(audio[:1, : audio_len[0]], pred[:1, : audio_len[0]], "test")
+                )[..., : self.codec_pad - 1].argmax(dim=-1)
+            longest_audio_index = audio_len.argmax()
+            longest_audio_len = audio_len[longest_audio_index]
+            longest_audio = audio[longest_audio_index, :longest_audio_len].unsqueeze(0)
+            longest_pred = pred[longest_audio_index, :longest_audio_len].unsqueeze(0)
+            self.log_table(longest_audio, longest_pred, "test")
 
     def configure_optimizers(self):
         if self.cfg.train.optimizer == "Adam":

@@ -5,7 +5,6 @@ from typing import cast
 import hydra
 import torch
 import torch.nn.utils
-import wandb
 from hydra.core.config_store import ConfigStore
 from lightning import Trainer
 from lightning.pytorch.callbacks import (
@@ -16,13 +15,14 @@ from lightning.pytorch.callbacks import (
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from lightning.pytorch.tuner import Tuner
 
+import wandb
 from config.config import Config
 from config.data.config import DataConfig
 from config.model.config import ModelConfig
 from config.train.config import TrainConfig
 from data.datamodule import VallEDataModule
 from model.model import VallE
-from model.utils import remove_weight_norm
+from utils.model import remove_weight_norm
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=Config)
@@ -46,7 +46,7 @@ def main(cfg: Config):
             log_graph=True,
         )
     else:
-        logger = WandbLogger(project=cfg.train.project)
+        logger = WandbLogger(project=cfg.train.project, save_dir="logs")
 
     callbacks = []
 

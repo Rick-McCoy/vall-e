@@ -4,7 +4,7 @@ ASCII = list(chr(i) for i in range(128))
 HANGUL_JAMO_INITIAL = list(chr(i) for i in range(0x1100, 0x1113))
 HANGUL_JAMO_MEDIAL = list(chr(i) for i in range(0x1161, 0x1176))
 HANGUL_JAMO_FINAL = list(chr(i) for i in range(0x11A8, 0x11C3))
-SPECIAL_CHARACTERS = ["<PAD>", "<SOS>", "<EOS>", "<UNK>"]
+SPECIAL_CHARACTERS = ["<EOS>", "<PAD>"]
 CHARACTERS = (
     ASCII
     + HANGUL_JAMO_INITIAL
@@ -105,9 +105,6 @@ def encode_text(text: str) -> np.ndarray:
 
     code = []
     for char in split_hangul_jamo(text):
-        if char in CHAR_TO_CODE:
-            code.append(CHAR_TO_CODE[char])
-        else:
-            code.append(CHAR_TO_CODE["<UNK>"])
+        code.append(CHAR_TO_CODE[char])
 
     return np.array(code, dtype=np.int64)

@@ -8,7 +8,7 @@ class VallELoss(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.cross_entropy = nn.CrossEntropyLoss(
-            ignore_index=2**cfg.data.codec_channels
+            ignore_index=2**cfg.data.codec_bits + 1
         )
 
     def forward(self, logit: Tensor, target: Tensor) -> Tensor:
