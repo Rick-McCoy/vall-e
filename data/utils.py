@@ -3,10 +3,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-from pandas import Series
 
 
-def load_metadata(csv_path: Path) -> tuple["Series[str]", "Series[str]", "Series[str]"]:
+def load_metadata(
+    csv_path: Path,
+) -> tuple["pd.Series[str]", "pd.Series[str]", "pd.Series[str]"]:
     """Loads metadata from a CSV file.
     The CSV file contains three columns: speaker, text, and codec_path.
     The speaker column is used as the speaker list.
@@ -17,9 +18,9 @@ def load_metadata(csv_path: Path) -> tuple["Series[str]", "Series[str]", "Series
         csv_path (Path): Path to CSV file.
 
     Returns:
-        speaker_list (Series[str]): Series of speakers.
-        text_list (Series[str]): Series of texts.
-        codec_path_list (Series[str]): Series of codec paths."""
+        speaker_list (pd.Series[str]): Series of speakers.
+        text_list (pd.Series[str]): Series of texts.
+        codec_path_list (pd.Series[str]): Series of codec paths."""
 
     df = pd.read_csv(csv_path, index_col=False, dtype=str)
     speaker_list = df["speaker"]

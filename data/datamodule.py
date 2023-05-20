@@ -87,15 +87,17 @@ class VallEDataModule(LightningDataModule):
         pass
 
     def setup(self, stage: Optional[str] = None) -> None:
-        self.train_val_dataset = VallEDataset(self.cfg, "train_val")
-        self.test_dataset = VallEDataset(self.cfg, "test")
+        if stage == "fit" or stage == "validate" or stage is None:
+            train_val_dataset = VallEDataset(self.cfg, "train_val")
+            train_val_size = len(train_val_dataset)
+            train_size = int(train_val_size * self.cfg.data.train_val_split)
+            val_size = train_val_size - train_size
+            self.train_dataset, self.val_dataset = random_split(
+                train_val_dataset, [train_size, val_size]
+            )
 
-        train_val_size = len(self.train_val_dataset)
-        train_size = int(train_val_size * self.cfg.data.train_val_split)
-        val_size = train_val_size - train_size
-        self.train_dataset, self.val_dataset = random_split(
-            self.train_val_dataset, [train_size, val_size]
-        )
+        if stage == "test" or stage is None:
+            self.test_dataset = VallEDataset(self.cfg, "test")
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(

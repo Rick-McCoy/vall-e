@@ -10,6 +10,7 @@ class AutoRegressive(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
+        self.nhead = cfg.model.nhead
         self.text_embedding = nn.Embedding(
             num_embeddings=VOCAB_SIZE,
             embedding_dim=cfg.model.hidden_dim,
@@ -51,41 +52,33 @@ class AutoRegressive(nn.Module):
 
         max_len = int((text_len_batch + audio_len_batch).max().item())
         embed_list = []
-        mask_list = []
-        for text_embed, audio_embed, text_len, audio_len in zip(
-            text_embedding,
-            audio_embedding,
-            text_len_batch,
-            audio_len_batch,
+        mask = torch.zeros(
+            (
+                text.shape[0],
+                max_len,
+                max_len,
+            )  # pyright: ignore [reportGeneralTypeIssues]
+        ).to(text.device)
+        for text_embed, audio_embed, text_len, audio_len, mask_item in zip(
+            text_embedding, audio_embedding, text_len_batch, audio_len_batch, mask
         ):
             item_len = int((text_len + audio_len).item())
             embed_list.append(
-                nn.functional.pad(
-                    torch.cat(
-                        [
-                            text_embed[:text_len],
-                            audio_embed[:audio_len],
-                        ],
-                        dim=0,
-                    ),
-                    (0, 0, 0, max_len - item_len),
-                )
+                torch.cat(
+                    [
+                        text_embed[:text_len],
+                        audio_embed[:audio_len],
+                    ],
+                    dim=0,
+                ),
             )
-            mask_item = (
-                torch.full((item_len, item_len), float("-inf")).triu(1).to(text.device)
+            mask_item[:item_len, :item_len] = torch.triu(
+                mask_item[:item_len, :item_len], diagonal=1
             )
             mask_item[:, :text_len] = 0
-            mask_list.append(
-                nn.functional.pad(
-                    mask_item,
-                    (0, max_len - item_len, 0, max_len - item_len),
-                )
-            )
 
-        mask = torch.stack(mask_list, dim=0).repeat_interleave(
-            repeats=self.cfg.model.nhead, dim=0
-        )
-        embed = torch.einsum("blc->lbc", torch.stack(embed_list, dim=0))
+        mask = mask.repeat_interleave(repeats=self.nhead, dim=0)
+        embed = torch.nn.utils.rnn.pad_sequence(embed_list)
         transformer_output = self.transformer_decoder(embed, embed, tgt_mask=mask)
         output = self.linear(torch.einsum("lbc->blc", transformer_output))
         return output

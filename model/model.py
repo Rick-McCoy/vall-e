@@ -1,18 +1,18 @@
 import numpy as np
 import torch
-from encodec.model import EncodecModel
+import wandb
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
 from torch import Tensor
 from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
 
-import wandb
 from config.config import Config
 from data.audio import codec_to_audio, mel_energy
 from data.datamodule import CollatedBatch
 from data.text import VOCAB_SIZE
 from data.utils import plot_mel_spectrogram
+from encodec.model import EncodecModel
 from model.autoregressive import AutoRegressive
 from model.loss import VallELoss
 from model.nonautoregressive import NonAutoRegressive
@@ -22,6 +22,7 @@ class VallE(LightningModule):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
         self.cfg = cfg
+        self.codec_channels = cfg.data.codec_channels
         self.lr = cfg.train.lr
         self.autoregressive = AutoRegressive(cfg)
         self.nonautoregressive = NonAutoRegressive(cfg)
@@ -43,15 +44,13 @@ class VallE(LightningModule):
         )
         self.logger: WandbLogger
         if cfg.data.sample_rate == 24000:
-            encodec_model = EncodecModel.encodec_model_24khz()
+            self.encodec_model = EncodecModel.encodec_model_24khz()
         elif cfg.data.sample_rate == 48000:
-            encodec_model = EncodecModel.encodec_model_48khz()
+            self.encodec_model = EncodecModel.encodec_model_48khz()
         else:
             raise NotImplementedError(
                 f"Sample rate {cfg.data.sample_rate} not supported"
             )
-        self.add_module("encodec_model", encodec_model)
-        self.encodec_model: EncodecModel
         self.rng = np.random.default_rng()
 
     def log_table(self, real_codec: Tensor, gen_codec: Tensor, header: str):
@@ -115,8 +114,6 @@ class VallE(LightningModule):
         audio: Tensor,
         text_len_batch: Tensor,
         audio_len_batch: Tensor,
-        *args,
-        **kwargs,
     ) -> Tensor:
         ar_output_batch = self.autoregressive(
             text, audio[:, 0], text_len_batch, audio_len_batch
@@ -141,8 +138,6 @@ class VallE(LightningModule):
         audio_len_batch: Tensor,
         enrolled_audio_len_batch: Tensor,
         channel: int,
-        *args,
-        **kwargs,
     ) -> Tensor:
         nar_output_batch = self.nonautoregressive(
             text,
@@ -150,6 +145,7 @@ class VallE(LightningModule):
             enrolled_audio,
             text_len_batch,
             audio_len_batch,
+            enrolled_audio_len_batch,
             channel,
         )
         nar_output_split = []
@@ -179,7 +175,7 @@ class VallE(LightningModule):
     ) -> Tensor:
         ar_output = self.ar_forward(text, audio, text_len_batch, audio_len_batch)
         nar_output_list = []
-        for channel in range(1, self.cfg.data.codec_channels):
+        for channel in range(1, self.codec_channels):
             nar_output_list.append(
                 self.nar_forward(
                     text,
@@ -290,7 +286,12 @@ class VallE(LightningModule):
             self.log_table(audio[:1, : audio_len[0]], pred[:1, : audio_len[0]], "test")
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(params=self.parameters(), lr=self.lr)
+        if self.cfg.train.optimizer == "Adam":
+            optimizer = torch.optim.Adam(params=self.parameters(), lr=self.lr)
+        elif self.cfg.train.optimizer == "AdamW":
+            optimizer = torch.optim.AdamW(params=self.parameters(), lr=self.lr)
+        else:
+            raise NotImplementedError(f"Unknown optimizer {self.cfg.train.optimizer}")
 
         def lr_scale(epoch: int) -> float:
             return min(

@@ -13,7 +13,7 @@ class TrainConfig:
     lr: float = 5e-4
     monitor: bool = False
     num_workers: int = 2
-    optimizer: str = "Adam"
+    optimizer: str = "AdamW"
     warmup_steps: int = 32000
     max_steps: int = 800000
     precision: str = "32"

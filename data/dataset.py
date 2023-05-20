@@ -31,9 +31,6 @@ class VallEDataset(Dataset):
         )
         self.length = len(self.speaker_list)
         self.speaker_to_indices = self.group_by_speaker()
-        self.enrolled_codec_len = (
-            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate
-        )
 
     def __len__(self) -> int:
         return self.length

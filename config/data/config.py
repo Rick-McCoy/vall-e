@@ -11,5 +11,4 @@ class DataConfig:
     codec_rate: int = 75
     codec_channels: int = 8
     codec_bits: int = 10
-    enrolled_codec_sec: int = 3
     sample_sentence: str = "나는 고양이로소이다. 이름은 아직 없다."

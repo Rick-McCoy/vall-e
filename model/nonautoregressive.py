@@ -1,5 +1,4 @@
-import itertools
-from typing import Callable
+from typing import Callable, Optional
 
 import torch
 from torch import Tensor, nn
@@ -17,10 +16,10 @@ class TransformerDecoder(nn.TransformerDecoder):
         tgt: Tensor,
         memory: Tensor,
         layer: int,
-        tgt_mask: Tensor | None = None,
-        memory_mask: Tensor | None = None,
-        tgt_key_padding_mask: Tensor | None = None,
-        memory_key_padding_mask: Tensor | None = None,
+        tgt_mask: Optional[Tensor] = None,
+        memory_mask: Optional[Tensor] = None,
+        tgt_key_padding_mask: Optional[Tensor] = None,
+        memory_key_padding_mask: Optional[Tensor] = None,
     ) -> Tensor:
         output = tgt
 
@@ -77,10 +76,10 @@ class TransformerDecoderLayer(nn.TransformerDecoderLayer):
         tgt: Tensor,
         memory: Tensor,
         layer: int,
-        tgt_mask: Tensor | None = None,
-        memory_mask: Tensor | None = None,
-        tgt_key_padding_mask: Tensor | None = None,
-        memory_key_padding_mask: Tensor | None = None,
+        tgt_mask: Optional[Tensor] = None,
+        memory_mask: Optional[Tensor] = None,
+        tgt_key_padding_mask: Optional[Tensor] = None,
+        memory_key_padding_mask: Optional[Tensor] = None,
         tgt_is_causal: bool = False,
         memory_is_causal: bool = False,
     ) -> Tensor:
@@ -118,56 +117,39 @@ class NonAutoRegressive(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
-        self.enrolled_codec_len = (
-            self.cfg.data.enrolled_codec_sec * self.cfg.data.codec_rate + 1
-        )
         self.text_embedding = nn.Embedding(
             num_embeddings=VOCAB_SIZE,
             embedding_dim=cfg.model.hidden_dim,
         )
-        self.audio_embeddings = nn.ModuleList(
-            [
-                nn.Embedding(
-                    num_embeddings=2**cfg.data.codec_bits,
-                    embedding_dim=cfg.model.hidden_dim,
-                )
-                for _ in range(cfg.data.codec_channels)
-            ]
+        self.shared_audio_weight = nn.Parameter(
+            torch.randn(
+                cfg.data.codec_channels, 2**cfg.data.codec_bits, cfg.model.hidden_dim
+            )
+        )
+        self.register_buffer(
+            "offset",
+            torch.arange(0, cfg.data.codec_channels).reshape(1, -1, 1)
+            * 2**cfg.data.codec_bits,
+        )
+        self.offset: Tensor
+        self.index_embedding_weight = nn.Parameter(
+            torch.randn(cfg.data.codec_channels, cfg.model.hidden_dim)
         )
         self.positional_encoding = PositionalEncoding(
-            d_model=cfg.model.hidden_dim,
-            dropout=cfg.model.dropout,
-        )
-        self.index_embedding = nn.Embedding(
-            num_embeddings=cfg.data.codec_channels,
-            embedding_dim=cfg.model.hidden_dim,
+            d_model=cfg.model.hidden_dim, dropout=cfg.model.dropout
         )
         self.transformer_decoder = TransformerDecoder(
             decoder_layer=TransformerDecoderLayer(
                 d_model=cfg.model.hidden_dim,
                 nhead=cfg.model.nhead,
+                n_channels=cfg.data.codec_channels,
                 dim_feedforward=cfg.model.dim_feedforward,
                 dropout=cfg.model.dropout,
                 activation=cfg.model.activation,
-                n_channels=cfg.data.codec_channels,
+                norm_first=True,
             ),
             num_layers=cfg.model.num_layers,
         )
-        self.linears = nn.ModuleList(
-            [
-                nn.Linear(
-                    in_features=cfg.model.hidden_dim,
-                    out_features=2**cfg.data.codec_bits,
-                    bias=False,
-                )
-                for _ in range(cfg.data.codec_channels)
-            ]
-        )
-        for linear, audio_embedding in zip(
-            itertools.islice(self.linears, 1, None),
-            itertools.islice(self.audio_embeddings, None, cfg.data.codec_channels - 1),
-        ):
-            linear.weight = audio_embedding.weight
 
     def forward(
         self,
@@ -176,63 +158,52 @@ class NonAutoRegressive(nn.Module):
         enrolled_audio: Tensor,
         text_len_batch: Tensor,
         audio_len_batch: Tensor,
+        enrolled_audio_len_batch: Tensor,
         index: int,
     ):
         text_embedding = self.positional_encoding(self.text_embedding(text))
-        audio_embed_list = []
-        for i, embedding in enumerate(self.audio_embeddings):
-            audio_embed_list.append(embedding(audio[:, i]))
-            if i == index - 1:
-                break
+        audio = audio + self.offset[:, :index]
         audio_embedding = self.positional_encoding(
-            torch.stack(audio_embed_list, dim=1).sum(dim=1)
+            F.embedding(audio, self.shared_audio_weight.flatten(0, 1)).sum(dim=1)
         )
-        enrolled_audio_embed_list = [
-            embedding(enrolled_audio[:, i])
-            for i, embedding in enumerate(self.audio_embeddings)
-        ]
+        enrolled_audio = enrolled_audio + self.offset
         enrolled_audio_embedding = self.positional_encoding(
-            torch.stack(enrolled_audio_embed_list, dim=1).sum(dim=1)
+            F.embedding(enrolled_audio, self.shared_audio_weight.flatten(0, 1)).sum(
+                dim=1
+            )
         )
-        index_embedding = self.positional_encoding(
-            self.index_embedding.weight[index].reshape(1, 1, -1)
-        ).squeeze(0)
+        index_embedding = self.index_embedding_weight[index].unsqueeze(0)
 
         embed_list = []
-        max_len = (
-            int((text_len_batch + audio_len_batch).max().item())
-            + self.enrolled_codec_len
-            + 1
-        )
-        for text_embed, audio_embed, enrolled_audio_embed, text_len, audio_len in zip(
+        for (
+            text_embed,
+            audio_embed,
+            enrolled_audio_embed,
+            text_len,
+            audio_len,
+            enrolled_audio_len,
+        ) in zip(
             text_embedding,
             audio_embedding,
             enrolled_audio_embedding,
             text_len_batch,
             audio_len_batch,
+            enrolled_audio_len_batch,
         ):
-            item_len = int((text_len + audio_len).item()) + self.enrolled_codec_len + 1
             embed_list.append(
-                nn.functional.pad(
-                    torch.cat(
-                        [
-                            text_embed[:text_len],
-                            enrolled_audio_embed,
-                            audio_embed[:audio_len],
-                            index_embedding,
-                        ],
-                        dim=0,
-                    ),
-                    (0, 0, 0, max_len - item_len),
-                )
+                torch.cat(
+                    [
+                        text_embed[:text_len],
+                        enrolled_audio_embed[:enrolled_audio_len],
+                        audio_embed[:audio_len],
+                        index_embedding,
+                    ],
+                    dim=0,
+                ),
             )
 
-        embed = torch.einsum("blc->lbc", torch.stack(embed_list, dim=0))
+        embed = torch.nn.utils.rnn.pad_sequence(embed_list)
         transformer_output = self.transformer_decoder(embed, embed, layer=index)
-        for i, linear in enumerate(self.linears):
-            if i == index - 1:
-                output = linear(torch.einsum("lbc->blc", transformer_output))
-                break
-        else:
-            raise ValueError(f"index {index} is out of range")
-        return output
+        return torch.einsum(
+            "lbc,dc->bld", transformer_output, self.shared_audio_weight[index]
+        )

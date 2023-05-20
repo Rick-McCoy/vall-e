@@ -4,7 +4,8 @@ from typing import cast
 
 import hydra
 import torch
-import torch._dynamo.config
+import torch.nn.utils
+import wandb
 from hydra.core.config_store import ConfigStore
 from lightning import Trainer
 from lightning.pytorch.callbacks import (
@@ -15,13 +16,13 @@ from lightning.pytorch.callbacks import (
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from lightning.pytorch.tuner import Tuner
 
-import wandb
 from config.config import Config
 from config.data.config import DataConfig
 from config.model.config import ModelConfig
 from config.train.config import TrainConfig
 from data.datamodule import VallEDataModule
 from model.model import VallE
+from model.utils import remove_weight_norm
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=Config)
@@ -109,6 +110,18 @@ def main(cfg: Config):
 
     trainer.fit(model=compiled_model, datamodule=datamodule)
     trainer.test(model=compiled_model, datamodule=datamodule)
+
+    # Remove weight norm
+    remove_weight_norm(compiled_model)
+    # Script model
+    script_model = torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
+        compiled_model
+    )
+    save_path = Path("model-store")
+    save_path.mkdir(exist_ok=True)
+    torch.jit.save(  # pyright: ignore [reportPrivateImportUsage]
+        script_model, save_path / "model.pt"
+    )
 
 
 if __name__ == "__main__":
