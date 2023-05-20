@@ -1,10 +1,9 @@
-from typing import cast
+from typing import Literal, cast
 
 import numpy as np
 import torch
 from lightning import LightningModule
 from lightning.pytorch.loggers import WandbLogger
-from torch import Tensor
 from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
@@ -93,72 +92,71 @@ class VallE(LightningModule):
         self.gen_text_len: torch.Tensor
         self.max_infer_len = 100
 
-    def log_table(
-        self, real_codec: Tensor, pred_codec: Tensor, gen_codec: Tensor, header: str
-    ):
-        real_audio = codec_to_audio(real_codec, self.encodec_model)
-        pred_audio = codec_to_audio(pred_codec, self.encodec_model)
-        gen_audio = codec_to_audio(gen_codec, self.encodec_model)
-        real_mel, _ = mel_energy(
-            real_audio.squeeze(1),
-            n_fft=1024,
-            num_mels=80,
-            sampling_rate=self.cfg.data.sample_rate,
-            hop_size=256,
-            win_size=1024,
-            fmin=0,
-            fmax=8000,
+    def log_table(self, batch: CollatedBatch, mode: Literal["val", "test"]):
+        (
+            text,
+            text_len,
+            audio,
+            audio_len,
+            enrolled_audio,
+            enrolled_audio_len,
+        ) = self.parse_batch(batch)
+        longest_audio_index = audio_len.argmax()
+        longest_audio_len = audio_len[longest_audio_index].unsqueeze(0)
+        longest_audio = audio[longest_audio_index, :longest_audio_len].unsqueeze(0)
+        longest_text_len = text_len[longest_audio_index].unsqueeze(0)
+        longest_text = text[longest_audio_index, :longest_text_len].unsqueeze(0)
+        longest_enrolled_audio_len = enrolled_audio_len[longest_audio_index].unsqueeze(
+            0
         )
-        pred_mel, _ = mel_energy(
-            pred_audio.squeeze(1),
-            n_fft=1024,
-            num_mels=80,
-            sampling_rate=self.cfg.data.sample_rate,
-            hop_size=256,
-            win_size=1024,
-            fmin=0,
-            fmax=8000,
-        )
-        gen_mel, _ = mel_energy(
-            gen_audio.squeeze(1),
-            n_fft=1024,
-            num_mels=80,
-            sampling_rate=self.cfg.data.sample_rate,
-            hop_size=256,
-            win_size=1024,
-            fmin=0,
-            fmax=8000,
-        )
-        real_audio_cpu = real_audio.squeeze().detach().cpu() * 2**15
-        pred_audio_cpu = pred_audio.squeeze().detach().cpu() * 2**15
-        gen_audio_cpu = gen_audio.squeeze().detach().cpu() * 2**15
-        real_audio_numpy = real_audio_cpu.numpy().astype(np.int16)
-        pred_audio_numpy = pred_audio_cpu.numpy().astype(np.int16)
-        gen_audio_numpy = gen_audio_cpu.numpy().astype(np.int16)
-        real_mel_image = plot_mel_spectrogram(real_mel.squeeze().detach().cpu().numpy())
-        pred_mel_image = plot_mel_spectrogram(pred_mel.squeeze().detach().cpu().numpy())
-        gen_mel_image = plot_mel_spectrogram(gen_mel.squeeze().detach().cpu().numpy())
+        longest_enrolled_audio = enrolled_audio[
+            longest_audio_index, :longest_enrolled_audio_len
+        ].unsqueeze(0)
+        with torch.no_grad():
+            pred = self(
+                longest_text,
+                longest_audio,
+                longest_enrolled_audio,
+                longest_text_len,
+                longest_audio_len,
+                longest_enrolled_audio_len,
+            )[..., : self.codec_pad - 1].argmax(dim=-1)
+            gen = self.inference(
+                text=self.gen_text,
+                enrolled_text=longest_text,
+                enrolled_audio=longest_audio,
+                text_len_batch=self.gen_text_len,
+                enrolled_text_len_batch=longest_text_len,
+                enrolled_audio_len_batch=longest_audio_len,
+            )
+        codec_list = [longest_audio, pred, gen]
+        data = []
+        for codec in codec_list:
+            audio = codec_to_audio(codec, self.encodec_model)
+            mel, _ = mel_energy(
+                audio.squeeze(1),
+                n_fft=1024,
+                num_mels=80,
+                sampling_rate=self.cfg.data.sample_rate,
+                hop_size=256,
+                win_size=1024,
+                fmin=0,
+                fmax=8000,
+            )
+            audio_cpu = audio.squeeze().detach().cpu() * 2**15
+            audio_numpy = audio_cpu.numpy().astype(np.int16)
+            mel_image = plot_mel_spectrogram(mel.squeeze().detach().cpu().numpy())
+            data.append(
+                [
+                    wandb.Audio(audio_numpy, sample_rate=self.cfg.data.sample_rate),
+                    wandb.Image(mel_image),
+                ]
+            )
+
         self.logger.log_table(
-            f"{header}/table",
+            f"{mode}/table",
             columns=["Audio", "Mel"],
-            data=[
-                [
-                    wandb.Audio(
-                        real_audio_numpy, sample_rate=self.cfg.data.sample_rate
-                    ),
-                    wandb.Image(real_mel_image),
-                ],
-                [
-                    wandb.Audio(
-                        pred_audio_numpy, sample_rate=self.cfg.data.sample_rate
-                    ),
-                    wandb.Image(pred_mel_image),
-                ],
-                [
-                    wandb.Audio(gen_audio_numpy, sample_rate=self.cfg.data.sample_rate),
-                    wandb.Image(gen_mel_image),
-                ],
-            ],
+            data=data,
         )
 
     def parse_batch(self, data: CollatedBatch):
@@ -190,11 +188,11 @@ class VallE(LightningModule):
 
     def ar_forward(
         self,
-        text: Tensor,
-        audio: Tensor,
-        text_len_batch: Tensor,
-        audio_len_batch: Tensor,
-    ) -> Tensor:
+        text: torch.Tensor,
+        audio: torch.Tensor,
+        text_len_batch: torch.Tensor,
+        audio_len_batch: torch.Tensor,
+    ) -> torch.Tensor:
         text, text_len_batch = self.add_text_eos(text, text_len_batch)
         ar_output_batch = self.autoregressive(
             text, audio[:, 0], text_len_batch, audio_len_batch
@@ -210,14 +208,14 @@ class VallE(LightningModule):
 
     def nar_forward(
         self,
-        text: Tensor,
-        audio: Tensor,
-        enrolled_audio: Tensor,
-        text_len_batch: Tensor,
-        audio_len_batch: Tensor,
-        enrolled_audio_len_batch: Tensor,
+        text: torch.Tensor,
+        audio: torch.Tensor,
+        enrolled_audio: torch.Tensor,
+        text_len_batch: torch.Tensor,
+        audio_len_batch: torch.Tensor,
+        enrolled_audio_len_batch: torch.Tensor,
         channel: int,
-    ) -> Tensor:
+    ) -> torch.Tensor:
         text, text_len_batch = self.add_text_eos(text, text_len_batch)
         enrolled_audio, enrolled_audio_len_batch = self.add_codec_eos(
             enrolled_audio, enrolled_audio_len_batch
@@ -250,13 +248,13 @@ class VallE(LightningModule):
 
     def forward(
         self,
-        text: Tensor,
-        audio: Tensor,
-        enrolled_audio: Tensor,
-        text_len_batch: Tensor,
-        audio_len_batch: Tensor,
-        enrolled_audio_len_batch: Tensor,
-    ) -> Tensor:
+        text: torch.Tensor,
+        audio: torch.Tensor,
+        enrolled_audio: torch.Tensor,
+        text_len_batch: torch.Tensor,
+        audio_len_batch: torch.Tensor,
+        enrolled_audio_len_batch: torch.Tensor,
+    ) -> torch.Tensor:
         ar_output = self.ar_forward(text, audio, text_len_batch, audio_len_batch)
         nar_output_list = []
         for channel in range(1, self.codec_channels):
@@ -276,13 +274,13 @@ class VallE(LightningModule):
 
     def inference(
         self,
-        text: Tensor,
-        enrolled_text: Tensor,
-        enrolled_audio: Tensor,
-        text_len_batch: Tensor,
-        enrolled_text_len_batch: Tensor,
-        enrolled_audio_len_batch: Tensor,
-    ) -> Tensor:
+        text: torch.Tensor,
+        enrolled_text: torch.Tensor,
+        enrolled_audio: torch.Tensor,
+        text_len_batch: torch.Tensor,
+        enrolled_text_len_batch: torch.Tensor,
+        enrolled_audio_len_batch: torch.Tensor,
+    ) -> torch.Tensor:
         assert len(text) == 1, "Inference only supports batch size 1"
         with torch.no_grad():
             unpad_text = unpad_sequence(text, text_len_batch, batch_first=True)
@@ -331,7 +329,9 @@ class VallE(LightningModule):
 
             return audio
 
-    def training_step(self, batch: CollatedBatch) -> Tensor:
+    def single_step(
+        self, batch: CollatedBatch, mode: Literal["train", "val", "test"]
+    ) -> torch.Tensor:
         (
             text,
             text_len,
@@ -355,8 +355,16 @@ class VallE(LightningModule):
         eos_audio, _ = self.add_codec_eos(audio, audio_len)
         loss = self.loss(output, eos_audio[:, [0, random_channel]])
         self.acc(output, eos_audio[:, [0, random_channel]])
-        self.log("train/loss", loss, on_step=True)
-        self.log("train/acc", self.acc, on_step=True)
+        if mode == "train":
+            self.log(f"{mode}/loss", loss, on_step=True)
+            self.log(f"{mode}/acc", self.acc, on_step=True)
+        else:
+            self.log(f"{mode}/loss", loss, on_epoch=True, sync_dist=True)
+            self.log(f"{mode}/acc", self.acc, on_epoch=True, sync_dist=True)
+        return loss
+
+    def training_step(self, batch: CollatedBatch) -> torch.Tensor:
+        loss = self.single_step(batch, "train")
         if self.device.index == 0:
             scheduler = self.lr_schedulers()
             assert isinstance(scheduler, LRScheduler)
@@ -364,118 +372,14 @@ class VallE(LightningModule):
         return loss
 
     def validation_step(self, batch: CollatedBatch, batch_idx: int):
-        (
-            text,
-            text_len,
-            audio,
-            audio_len,
-            enrolled_audio,
-            enrolled_audio_len,
-        ) = self.parse_batch(batch)
-        ar_output = self.ar_forward(text, audio, text_len, audio_len)
-        random_channel = self.rng.choice(self.cfg.data.codec_channels - 1) + 1
-        nar_output = self.nar_forward(
-            text,
-            audio,
-            enrolled_audio,
-            text_len,
-            audio_len,
-            enrolled_audio_len,
-            random_channel,
-        )
-        output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
-        eos_audio, _ = self.add_codec_eos(audio, audio_len)
-        loss = self.loss(output, eos_audio[:, [0, random_channel]])
-        self.acc(output, eos_audio[:, [0, random_channel]])
-        self.log("val/loss", loss, on_epoch=True, sync_dist=True)
-        self.log("val/acc", self.acc, on_epoch=True, sync_dist=True)
+        self.single_step(batch, "val")
         if batch_idx == 0 and self.device.index == 0:
-            longest_audio_index = audio_len.argmax()
-            longest_audio_len = audio_len[longest_audio_index].unsqueeze(0)
-            longest_audio = audio[longest_audio_index, :longest_audio_len].unsqueeze(0)
-            longest_text_len = text_len[longest_audio_index].unsqueeze(0)
-            longest_text = text[longest_audio_index, :longest_text_len].unsqueeze(0)
-            longest_enrolled_audio_len = enrolled_audio_len[
-                longest_audio_index
-            ].unsqueeze(0)
-            longest_enrolled_audio = enrolled_audio[
-                longest_audio_index, :longest_enrolled_audio_len
-            ].unsqueeze(0)
-            with torch.no_grad():
-                pred = self(
-                    longest_text,
-                    longest_audio,
-                    longest_enrolled_audio,
-                    longest_text_len,
-                    longest_audio_len,
-                    longest_enrolled_audio_len,
-                )[..., : self.codec_pad - 1].argmax(dim=-1)
-                gen = self.inference(
-                    text=self.gen_text,
-                    enrolled_text=longest_text,
-                    enrolled_audio=longest_audio,
-                    text_len_batch=self.gen_text_len,
-                    enrolled_text_len_batch=longest_text_len,
-                    enrolled_audio_len_batch=longest_audio_len,
-                )
-            self.log_table(longest_audio, pred, gen, "val")
+            self.log_table(batch, "val")
 
     def test_step(self, batch: CollatedBatch, batch_idx: int):
-        (
-            text,
-            text_len,
-            audio,
-            audio_len,
-            enrolled_audio,
-            enrolled_audio_len,
-        ) = self.parse_batch(batch)
-        ar_output = self.ar_forward(text, audio, text_len, audio_len)
-        random_channel = self.rng.choice(self.cfg.data.codec_channels - 1) + 1
-        nar_output = self.nar_forward(
-            text,
-            audio,
-            enrolled_audio,
-            text_len,
-            audio_len,
-            enrolled_audio_len,
-            random_channel,
-        )
-        output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
-        eos_audio, _ = self.add_codec_eos(audio, audio_len)
-        loss = self.loss(output, eos_audio[:, [0, random_channel]])
-        self.acc(output, eos_audio[:, [0, random_channel]])
-        self.log("test/loss", loss, on_epoch=True, sync_dist=True)
-        self.log("test/acc", self.acc, on_epoch=True, sync_dist=True)
+        self.single_step(batch, "test")
         if batch_idx == 0 and self.device.index == 0:
-            longest_audio_index = audio_len.argmax()
-            longest_audio_len = audio_len[longest_audio_index].unsqueeze(0)
-            longest_audio = audio[longest_audio_index, :longest_audio_len].unsqueeze(0)
-            longest_text_len = text_len[longest_audio_index].unsqueeze(0)
-            longest_text = text[longest_audio_index, :longest_text_len].unsqueeze(0)
-            longest_enrolled_audio_len = enrolled_audio_len[
-                longest_audio_index
-            ].unsqueeze(0)
-            longest_enrolled_audio = enrolled_audio[
-                longest_audio_index, :longest_enrolled_audio_len
-            ].unsqueeze(0)
-            with torch.no_grad():
-                pred = self(
-                    longest_text,
-                    longest_audio,
-                    longest_enrolled_audio,
-                    longest_text_len,
-                    longest_audio_len,
-                    longest_enrolled_audio_len,
-                )[..., : self.codec_pad - 1].argmax(dim=-1)
-                gen = self.inference(
-                    text=self.gen_text,
-                    enrolled_text=longest_text,
-                    enrolled_audio=longest_audio,
-                    text_len_batch=self.gen_text_len,
-                    enrolled_text_len_batch=longest_text_len,
-                    enrolled_audio_len_batch=longest_audio_len,
-                )
-            self.log_table(longest_audio, pred, gen, "val")
+            self.log_table(batch, "test")
 
     def configure_optimizers(self):
         if self.cfg.train.optimizer == "Adam":
