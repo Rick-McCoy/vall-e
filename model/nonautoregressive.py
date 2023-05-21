@@ -1,116 +1,11 @@
-from typing import Callable, Optional
-
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
 from config.config import Config
 from data.text import VOCAB_SIZE
-from model.adaln import AdaptiveLayerNorm
 from model.positional_encoding import PositionalEncoding
-
-
-class TransformerDecoder(nn.TransformerDecoder):
-    def forward(
-        self,
-        tgt: Tensor,
-        memory: Tensor,
-        layer: int,
-        tgt_mask: Optional[Tensor] = None,
-        memory_mask: Optional[Tensor] = None,
-        tgt_key_padding_mask: Optional[Tensor] = None,
-        memory_key_padding_mask: Optional[Tensor] = None,
-    ) -> Tensor:
-        output = tgt
-
-        for mod in self.layers:
-            output = mod(
-                output,
-                memory,
-                layer,
-                tgt_mask=tgt_mask,
-                memory_mask=memory_mask,
-                tgt_key_padding_mask=tgt_key_padding_mask,
-                memory_key_padding_mask=memory_key_padding_mask,
-            )
-
-        if self.norm is not None:
-            output = self.norm(output)
-
-        return output
-
-
-class TransformerDecoderLayer(nn.TransformerDecoderLayer):
-    def __init__(
-        self,
-        d_model: int,
-        nhead: int,
-        n_channels: int,
-        dim_feedforward: int = 2048,
-        dropout: float = 0.1,
-        activation: str | Callable[[Tensor], Tensor] = F.relu,
-        layer_norm_eps: float = 0.00001,
-        batch_first: bool = False,
-        norm_first: bool = False,
-        device=None,
-        dtype=None,
-    ) -> None:
-        super().__init__(
-            d_model,
-            nhead,
-            dim_feedforward,
-            dropout,
-            activation,
-            layer_norm_eps,
-            batch_first,
-            norm_first,
-            device,
-            dtype,
-        )
-        self.norm1 = AdaptiveLayerNorm(d_model=d_model, n_channels=n_channels)
-        self.norm2 = AdaptiveLayerNorm(d_model=d_model, n_channels=n_channels)
-        self.norm3 = AdaptiveLayerNorm(d_model=d_model, n_channels=n_channels)
-
-    def forward(
-        self,
-        tgt: Tensor,
-        memory: Tensor,
-        layer: int,
-        tgt_mask: Optional[Tensor] = None,
-        memory_mask: Optional[Tensor] = None,
-        tgt_key_padding_mask: Optional[Tensor] = None,
-        memory_key_padding_mask: Optional[Tensor] = None,
-        tgt_is_causal: bool = False,
-        memory_is_causal: bool = False,
-    ) -> Tensor:
-        x = tgt
-        if self.norm_first:
-            x = x + self._sa_block(
-                self.norm1(x, layer), tgt_mask, tgt_key_padding_mask, tgt_is_causal
-            )
-            x = x + self._mha_block(
-                self.norm2(x, layer),
-                memory,
-                memory_mask,
-                memory_key_padding_mask,
-                memory_is_causal,
-            )
-            x = x + self._ff_block(self.norm3(x, layer))
-        else:
-            x = self.norm1(
-                x + self._sa_block(x, tgt_mask, tgt_key_padding_mask, tgt_is_causal),
-                layer,
-            )
-            x = self.norm2(
-                x
-                + self._mha_block(
-                    x, memory, memory_mask, memory_key_padding_mask, memory_is_causal
-                ),
-                layer,
-            )
-            x = self.norm3(x + self._ff_block(x), layer)
-
-        return x
+from model.transformer import TransformerDecoder, TransformerDecoderLayer
 
 
 class NonAutoRegressive(nn.Module):
@@ -147,7 +42,6 @@ class NonAutoRegressive(nn.Module):
                 n_channels=cfg.data.codec_channels,
                 dim_feedforward=cfg.model.dim_feedforward,
                 dropout=cfg.model.dropout,
-                activation=cfg.model.activation,
                 batch_first=True,
                 norm_first=True,
             ),

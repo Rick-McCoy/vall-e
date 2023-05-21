@@ -2,13 +2,13 @@ from typing import Literal, cast
 
 import numpy as np
 import torch
+import wandb
 from lightning import LightningModule
-from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
-import wandb
 from config.config import Config
 from data.audio import codec_to_audio, mel_energy
 from data.datamodule import CollatedBatch
@@ -63,7 +63,6 @@ class VallE(LightningModule):
             torch.tensor([30, 10]),
             torch.tensor([40, 50]),
         )
-        self.logger: WandbLogger
         if cfg.data.sample_rate == 24000:
             encodec_model = EncodecModel.encodec_model_24khz()
         elif cfg.data.sample_rate == 48000:
@@ -129,7 +128,10 @@ class VallE(LightningModule):
                 enrolled_text_len_batch=longest_text_len,
                 enrolled_audio_len_batch=longest_audio_len,
             )
-        codec_list = [longest_audio, pred, gen]
+        if gen.shape[1] < 30:
+            codec_list = [longest_audio, pred]
+        else:
+            codec_list = [longest_audio, pred, gen]
         data = []
         for codec in codec_list:
             audio = codec_to_audio(codec, self.encodec_model)
@@ -146,18 +148,33 @@ class VallE(LightningModule):
             audio_cpu = audio.squeeze().detach().cpu() * 2**15
             audio_numpy = audio_cpu.numpy().astype(np.int16)
             mel_image = plot_mel_spectrogram(mel.squeeze().detach().cpu().numpy())
-            data.append(
-                [
-                    wandb.Audio(audio_numpy, sample_rate=self.cfg.data.sample_rate),
-                    wandb.Image(mel_image),
-                ]
-            )
+            data.append([audio_numpy, mel_image])
 
-        self.logger.log_table(
-            f"{mode}/table",
-            columns=["Audio", "Mel"],
-            data=data,
-        )
+        if isinstance(self.logger, WandbLogger):
+            self.logger.log_table(
+                f"{mode}/table",
+                columns=["Audio", "Mel"],
+                data=[
+                    [
+                        wandb.Audio(audio, sample_rate=self.cfg.data.sample_rate),
+                        wandb.Image(mel),
+                    ]
+                    for (audio, mel) in data
+                ],
+            )
+        elif isinstance(self.logger, TensorBoardLogger):
+            for (mel, audio), name in zip(data, ["real", "pred", "gen"]):
+                self.logger.experiment.add_audio(
+                    f"{mode}/Audio/{name}",
+                    audio,
+                    self.global_step,
+                    sample_rate=self.cfg.data.sample_rate,
+                )
+                self.logger.experiment.add_image(
+                    f"{mode}/Mel/{name}",
+                    mel,
+                    self.global_step,
+                )
 
     def parse_batch(self, data: CollatedBatch):
         text = data.text.to(self.device)
@@ -367,8 +384,8 @@ class VallE(LightningModule):
         loss = self.single_step(batch, "train")
         if self.device.index == 0:
             scheduler = self.lr_schedulers()
-            assert isinstance(scheduler, LRScheduler)
-            self.log("train/lr", scheduler.get_last_lr()[0], on_step=True)
+            if isinstance(scheduler, LRScheduler):
+                self.log("train/lr", scheduler.get_last_lr()[0], on_step=True)
         return loss
 
     def validation_step(self, batch: CollatedBatch, batch_idx: int):
@@ -389,18 +406,24 @@ class VallE(LightningModule):
         else:
             raise NotImplementedError(f"Unknown optimizer {self.cfg.train.optimizer}")
 
-        def lr_scale(epoch: int) -> float:
-            return min(
-                self.global_step / self.cfg.train.warmup_steps,
-                (self.cfg.train.max_steps - self.global_step)
-                / (self.cfg.train.max_steps - self.cfg.train.warmup_steps),
+        if self.cfg.train.scheduler == "LinearDecay":
+
+            def lr_scale(epoch: int) -> float:
+                return min(
+                    self.global_step / self.cfg.train.warmup_steps,
+                    (self.cfg.train.max_steps - self.global_step)
+                    / (self.cfg.train.max_steps - self.cfg.train.warmup_steps),
+                )
+
+            scheduler = torch.optim.lr_scheduler.LambdaLR(
+                optimizer,
+                lr_lambda=lr_scale,
             )
 
-        scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optimizer,
-            lr_lambda=lr_scale,
-        )
-
-        return [optimizer], [
-            {"scheduler": scheduler, "interval": "step", "frequency": 1}
-        ]
+            return [optimizer], [
+                {"scheduler": scheduler, "interval": "step", "frequency": 1}
+            ]
+        elif self.cfg.train.scheduler == "None":
+            return [optimizer], []
+        else:
+            raise NotImplementedError(f"Unknown scheduler {self.cfg.train.scheduler}")

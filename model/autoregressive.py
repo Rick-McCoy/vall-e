@@ -4,6 +4,7 @@ from torch import Tensor, nn
 from config.config import Config
 from data.text import VOCAB_SIZE
 from model.positional_encoding import PositionalEncoding
+from model.transformer import TransformerDecoder, TransformerDecoderLayer
 
 
 class AutoRegressive(nn.Module):
@@ -23,13 +24,14 @@ class AutoRegressive(nn.Module):
             d_model=cfg.model.hidden_dim,
             dropout=cfg.model.dropout,
         )
-        self.transformer_decoder = nn.TransformerDecoder(
-            decoder_layer=nn.TransformerDecoderLayer(
+        self.transformer_decoder = TransformerDecoder(
+            decoder_layer=TransformerDecoderLayer(
                 d_model=cfg.model.hidden_dim,
                 nhead=cfg.model.nhead,
+                n_channels=1,
                 dim_feedforward=cfg.model.dim_feedforward,
                 dropout=cfg.model.dropout,
-                activation=cfg.model.activation,
+                batch_first=True,
                 norm_first=True,
             ),
             num_layers=cfg.model.num_layers,
@@ -53,13 +55,13 @@ class AutoRegressive(nn.Module):
 
         max_len = int((text_len_batch + audio_len_batch).max().item())
         embed_list = []
-        mask = torch.full(
+        mask = torch.ones(
             (
                 text.shape[0],
                 max_len,
                 max_len,
             ),
-            fill_value=-float("inf"),
+            dtype=torch.bool,
         ).to(text.device)
         for text_embed, audio_embed, text_len, audio_len, mask_item in zip(
             text_embedding, audio_embedding, text_len_batch, audio_len_batch, mask
@@ -77,10 +79,12 @@ class AutoRegressive(nn.Module):
             mask_item[:item_len, :item_len] = torch.triu(
                 mask_item[:item_len, :item_len], diagonal=1
             )
-            mask_item[:, :text_len] = 0
+            mask_item[:, :text_len] = False
 
         mask = mask.repeat_interleave(repeats=self.nhead, dim=0)
-        embed = torch.nn.utils.rnn.pad_sequence(embed_list)
-        transformer_output = self.transformer_decoder(embed, embed, tgt_mask=mask)
-        output = self.linear(torch.einsum("lbc->blc", transformer_output))
+        embed = torch.nn.utils.rnn.pad_sequence(embed_list, batch_first=True)
+        transformer_output = self.transformer_decoder(
+            embed, embed, layer=0, tgt_mask=mask
+        )
+        output = self.linear(transformer_output)
         return output

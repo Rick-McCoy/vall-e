@@ -5,6 +5,7 @@ from typing import cast
 import hydra
 import torch
 import torch.nn.utils
+import wandb
 from hydra.core.config_store import ConfigStore
 from lightning import Trainer
 from lightning.pytorch.callbacks import (
@@ -15,7 +16,6 @@ from lightning.pytorch.callbacks import (
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from lightning.pytorch.tuner import Tuner
 
-import wandb
 from config.config import Config
 from config.data.config import DataConfig
 from config.model.config import ModelConfig
@@ -111,9 +111,7 @@ def main(cfg: Config):
     trainer.fit(model=compiled_model, datamodule=datamodule)
     trainer.test(model=compiled_model, datamodule=datamodule)
 
-    # Remove weight norm
     remove_weight_norm(compiled_model)
-    # Script model
     script_model = torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
         compiled_model
     )

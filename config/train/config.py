@@ -14,6 +14,7 @@ class TrainConfig:
     monitor: bool = False
     num_workers: int = 2
     optimizer: str = "AdamW"
+    scheduler: str = "LinearDecay"
     warmup_steps: int = 32000
     max_steps: int = 800000
     precision: str = "32"
