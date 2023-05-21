@@ -128,7 +128,7 @@ class VallE(LightningModule):
                 enrolled_text_len_batch=longest_text_len,
                 enrolled_audio_len_batch=longest_audio_len,
             )
-        if gen.shape[1] < 30:
+        if gen.shape[2] < 30:
             codec_list = [longest_audio, pred]
         else:
             codec_list = [longest_audio, pred, gen]
