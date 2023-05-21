@@ -97,7 +97,7 @@ def main(cfg: Config):
         fast_dev_run=cfg.train.fast_dev_run,
         logger=[logger],
         max_steps=cfg.train.max_steps,
-        num_sanity_val_steps=2,
+        num_sanity_val_steps=10,
         precision=precision,
     )
     tuner = Tuner(trainer)

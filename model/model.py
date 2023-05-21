@@ -89,7 +89,7 @@ class VallE(LightningModule):
             torch.tensor([self.gen_text.shape[1]], dtype=torch.long),
         )
         self.gen_text_len: torch.Tensor
-        self.max_infer_len = 100
+        self.max_infer_len = 1000
 
     def log_table(self, batch: CollatedBatch, mode: Literal["val", "test"]):
         (
