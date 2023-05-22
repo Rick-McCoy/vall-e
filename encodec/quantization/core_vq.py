@@ -67,9 +67,7 @@ def kmeans(samples, num_clusters: int, num_iters: int = 10):
     bins = torch.zeros_like(means)
     for _ in range(num_iters):
         # diffs = rearrange(samples, "n d -> n () d") - rearrange(means, "c d -> () c d")
-        diffs = torch.einsum("n d -> n () d", samples) - torch.einsum(
-            "c d -> () c d", means
-        )
+        diffs = samples.unsqueeze(1) - means.unsqueeze(0)
         dists = -(diffs**2).sum(dim=-1)
 
         buckets = dists.max(dim=-1).indices
@@ -147,7 +145,7 @@ class EuclideanCodebook(nn.Module):
 
     def preprocess(self, x):
         # x = rearrange(x, "... d -> (...) d")
-        x = torch.einsum("... d -> (...) d", x)
+        x = x.flatten(0, -2)
         return x
 
     def quantize(self, x):
@@ -254,7 +252,7 @@ class VectorQuantization(nn.Module):
 
     def encode(self, x):
         # x = rearrange(x, "b d n -> b n d")
-        x = torch.einsum("b d n -> b n d", x)
+        x = x.transpose(1, 2)
         x = self.project_in(x)
         embed_in = self._codebook.encode(x)
         return embed_in
@@ -263,13 +261,13 @@ class VectorQuantization(nn.Module):
         quantize = self._codebook.decode(embed_ind)
         quantize = self.project_out(quantize)
         # quantize = rearrange(quantize, "b n d -> b d n")
-        quantize = torch.einsum("b n d -> b d n", quantize)
+        quantize = quantize.transpose(1, 2)
         return quantize
 
     def forward(self, x):
         device = x.device
         # x = rearrange(x, "b d n -> b n d")
-        x = torch.einsum("b d n -> b n d", x)
+        x = x.transpose(1, 2)
         x = self.project_in(x)
 
         quantize, embed_ind = self._codebook(x)
@@ -278,7 +276,7 @@ class VectorQuantization(nn.Module):
 
         quantize = self.project_out(quantize)
         # quantize = rearrange(quantize, "b n d -> b d n")
-        quantize = torch.einsum("b n d -> b d n", quantize)
+        quantize = quantize.transpose(1, 2)
         return quantize, embed_ind, loss
 
 
