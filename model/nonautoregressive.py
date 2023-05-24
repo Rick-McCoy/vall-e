@@ -56,7 +56,7 @@ class NonAutoRegressive(nn.Module):
         text_len_batch: Tensor,
         audio_len_batch: Tensor,
         enrolled_audio_len_batch: Tensor,
-        index: int,
+        index: Tensor,
     ):
         text_embedding = self.positional_encoding(self.text_embedding(text))
         audio = audio + self.offset[:, :index]
