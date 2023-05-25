@@ -22,7 +22,8 @@ from config.model.config import ModelConfig
 from config.train.config import TrainConfig
 from data.datamodule import VallEDataModule
 from model.model import VallE
-from utils.model import remove_weight_norm
+
+# from utils.model import remove_weight_norm
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=Config)
@@ -34,19 +35,16 @@ cs.store(group="model", name="base_model", node=ModelConfig)
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: Config):
     model = VallE(cfg)
-    compiled_model = torch.compile(model, disable=True)
-    compiled_model = cast(VallE, compiled_model)
+    compiled_model = cast(VallE, torch.compile(model, disable=True))
     datamodule = VallEDataModule(cfg)
 
     Path("logs").mkdir(exist_ok=True)
     if cfg.train.fast_dev_run:
-        logger = TensorBoardLogger(
-            save_dir="logs",
-            name="fast_dev_run",
-            log_graph=True,
-        )
-    else:
+        logger = None
+    elif cfg.train.wandb:
         logger = WandbLogger(project=cfg.train.project, save_dir="logs")
+    else:
+        logger = TensorBoardLogger(save_dir="logs", name="vall-e")
 
     callbacks = []
 
@@ -88,14 +86,12 @@ def main(cfg: Config):
     precision = cfg.train.precision
     assert precision == "32" or precision == "16-mixed"
     trainer = Trainer(
-        accelerator="auto",
-        strategy="ddp_find_unused_parameters_true",
+        strategy="ddp",
         accumulate_grad_batches=cfg.train.acc,
         callbacks=callbacks,
         detect_anomaly=True,
-        devices="auto",
         fast_dev_run=cfg.train.fast_dev_run,
-        logger=[logger],
+        logger=logger,
         log_every_n_steps=10,
         max_steps=cfg.train.max_steps,
         num_sanity_val_steps=10,
@@ -112,15 +108,15 @@ def main(cfg: Config):
     trainer.fit(model=compiled_model, datamodule=datamodule)
     trainer.test(model=compiled_model, datamodule=datamodule)
 
-    remove_weight_norm(compiled_model)
-    script_model = torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
-        compiled_model
-    )
-    save_path = Path("model-store")
-    save_path.mkdir(exist_ok=True)
-    torch.jit.save(  # pyright: ignore [reportPrivateImportUsage]
-        script_model, save_path / "model.pt"
-    )
+    # remove_weight_norm(compiled_model)
+    # script_model = torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
+    #     compiled_model
+    # )
+    # save_path = Path("model-store")
+    # save_path.mkdir(exist_ok=True)
+    # torch.jit.save(  # pyright: ignore [reportPrivateImportUsage]
+    #     script_model, save_path / "model.pt"
+    # )
 
 
 if __name__ == "__main__":

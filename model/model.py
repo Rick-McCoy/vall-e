@@ -1,4 +1,4 @@
-from typing import Literal, cast
+from typing import Literal
 
 import numpy as np
 import torch
@@ -12,12 +12,10 @@ from config.config import Config
 from data.audio import codec_to_audio, mel_energy
 from data.datamodule import CollatedBatch
 from data.text import CHAR_TO_CODE, VOCAB_SIZE, encode_text
-from encodec.model import EncodecModel
 from model.autoregressive import AutoRegressive
 from model.loss import VallELoss
 from model.nonautoregressive import NonAutoRegressive
 from utils.data import plot_mel_spectrogram
-from utils.model import remove_weight_norm
 from utils.utils import unpad_sequence
 
 
@@ -29,6 +27,7 @@ class VallE(LightningModule):
             cfg.data.enrolled_audio_length * cfg.data.codec_rate
         )
         self.codec_channels = cfg.data.codec_channels
+        self.sample_rate = cfg.data.sample_rate
         self.register_buffer(
             "text_eos", torch.tensor([CHAR_TO_CODE["<EOS>"]], dtype=torch.long)
         )
@@ -60,21 +59,6 @@ class VallE(LightningModule):
             torch.tensor([50]),
             torch.tensor([30]),
             torch.tensor([200]),
-        )
-        if cfg.data.sample_rate == 24000:
-            encodec_model = EncodecModel.encodec_model_24khz()
-        elif cfg.data.sample_rate == 48000:
-            encodec_model = EncodecModel.encodec_model_48khz()
-        else:
-            raise NotImplementedError(
-                f"Sample rate {cfg.data.sample_rate} not supported"
-            )
-        remove_weight_norm(encodec_model)
-        self.encodec_model = cast(
-            EncodecModel,
-            torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
-                encodec_model
-            ),
         )
         self.register_buffer(
             "gen_text",
@@ -411,7 +395,7 @@ class VallE(LightningModule):
             codec_list = [longest_audio, pred, gen]
         data = []
         for codec in codec_list:
-            audio = codec_to_audio(codec, self.encodec_model)
+            audio = codec_to_audio(codec, sample_rate=self.sample_rate)
             mel, _ = mel_energy(
                 audio.squeeze(1),
                 n_fft=1024,
@@ -434,21 +418,22 @@ class VallE(LightningModule):
                 data=[
                     [
                         wandb.Audio(audio, sample_rate=self.cfg.data.sample_rate),
-                        wandb.Image(mel),
+                        wandb.Image(mel_image, mode="RGBA"),
                     ]
-                    for (audio, mel) in data
+                    for (audio, mel_image) in data
                 ],
             )
         elif isinstance(self.logger, TensorBoardLogger):
-            for (mel, audio), name in zip(data, ["real", "pred", "gen"]):
+            for (audio, mel_image), name in zip(data, ["real", "pred", "gen"]):
                 self.logger.experiment.add_audio(
                     f"{mode}/Audio/{name}",
-                    audio,
+                    audio / 2**15,
                     self.global_step,
                     sample_rate=self.cfg.data.sample_rate,
                 )
                 self.logger.experiment.add_image(
                     f"{mode}/Mel/{name}",
-                    mel,
+                    mel_image,
                     self.global_step,
+                    dataformats="HWC",
                 )

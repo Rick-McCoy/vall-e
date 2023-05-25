@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 import librosa
 import numpy as np
@@ -8,6 +8,7 @@ import torch
 
 from encodec.model import EncodecModel, EncodedFrame
 from encodec.modules.lstm import SLSTM
+from utils.model import remove_weight_norm
 
 
 def load_audio(path: Path, target_sr: int, channels: int) -> np.ndarray:
@@ -81,16 +82,39 @@ def audio_to_codec(audio: torch.Tensor, encodec_model: EncodecModel) -> torch.Te
         return torch.cat([frame[0] for frame in frames], dim=-1)
 
 
-def codec_to_audio(codec: torch.Tensor, encodec_model: EncodecModel) -> torch.Tensor:
+def codec_to_audio(
+    codec: torch.Tensor,
+    encodec_model: Optional[EncodecModel] = None,
+    sample_rate: Optional[int] = None,
+) -> torch.Tensor:
     """Decodes a codec tensor to audio.
 
     Args:
         codec (torch.Tensor): Codec tensor. Shape: (batch, 8, codec_samples)
-        encodec_model (EncodecModel): Encodec model to use for decoding.
+        encodec_model (Optional[EncodecModel]): Encodec model to use for decoding.
+        If None, uses the sample_rate argument to create a new model.
+        sample_rate (Optional[int]): Sample rate to use for creating a new model.
 
     Returns:
         audio (torch.Tensor): Audio tensor. Shape: (batch, channels, codec_samples * compression_factor)
     """
+    if encodec_model is None:
+        assert sample_rate is not None
+        if sample_rate == 24000:
+            encodec_model = EncodecModel.encodec_model_24khz()
+        elif sample_rate == 48000:
+            encodec_model = EncodecModel.encodec_model_48khz()
+        else:
+            raise NotImplementedError(f"Sample rate {sample_rate} not supported")
+        remove_weight_norm(encodec_model)
+        encodec_model = cast(
+            EncodecModel,
+            torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
+                encodec_model
+            ),
+        )
+        encodec_model = encodec_model.to(codec.device)
+
     with torch.no_grad():
         if encodec_model.segment is None:
             frames: list[EncodedFrame] = [(codec, None)]

@@ -19,3 +19,4 @@ class TrainConfig:
     max_steps: int = 800000
     precision: str = "32"
     project: str = "vall-e"
+    wandb: bool = True

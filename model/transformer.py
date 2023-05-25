@@ -1,5 +1,6 @@
 from typing import Callable, Optional
 
+import torch.utils.checkpoint
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.nn.modules.activation import MultiheadAttention
@@ -21,19 +22,21 @@ class TransformerDecoder(nn.TransformerDecoder):
         output = tgt
 
         for mod in self.layers:
-            output = mod(
+            output = torch.utils.checkpoint.checkpoint(
+                mod,
                 output,
                 memory,
                 layer,
-                tgt_mask=tgt_mask,
-                memory_mask=memory_mask,
-                tgt_key_padding_mask=tgt_key_padding_mask,
-                memory_key_padding_mask=memory_key_padding_mask,
+                tgt_mask,
+                memory_mask,
+                tgt_key_padding_mask,
+                memory_key_padding_mask,
             )
 
         if self.norm is not None:
             output = self.norm(output)
 
+        assert output is not None
         return output
 
 
