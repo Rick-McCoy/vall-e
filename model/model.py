@@ -355,10 +355,10 @@ class VallE(LightningModule):
 
         if self.cfg.train.scheduler == "LinearDecay":
 
-            def lr_scale(epoch: int) -> float:
+            def lr_scale(step: int) -> float:
                 return min(
-                    self.global_step / self.cfg.train.warmup_steps,
-                    (self.cfg.train.max_steps - self.global_step)
+                    step / self.cfg.train.warmup_steps,
+                    (self.cfg.train.max_steps - step)
                     / (self.cfg.train.max_steps - self.cfg.train.warmup_steps),
                 )
 
