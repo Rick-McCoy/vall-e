@@ -22,6 +22,7 @@ from utils.utils import unpad_sequence
 class VallE(LightningModule):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
+        self.save_hyperparameters(cfg)
         self.cfg = cfg
         self.enrolled_audio_length = (
             cfg.data.enrolled_audio_length * cfg.data.codec_rate
@@ -46,6 +47,16 @@ class VallE(LightningModule):
         self.nonautoregressive = NonAutoRegressive(cfg)
         self.loss = VallELoss(cfg)
         self.acc = MulticlassAccuracy(
+            num_classes=2**cfg.data.codec_bits + 2,
+            top_k=1,
+            ignore_index=2**cfg.data.codec_bits + 1,
+        )
+        self.ar_acc = MulticlassAccuracy(
+            num_classes=2**cfg.data.codec_bits + 2,
+            top_k=1,
+            ignore_index=2**cfg.data.codec_bits + 1,
+        )
+        self.nar_acc = MulticlassAccuracy(
             num_classes=2**cfg.data.codec_bits + 2,
             top_k=1,
             ignore_index=2**cfg.data.codec_bits + 1,
@@ -294,15 +305,27 @@ class VallE(LightningModule):
         )
         output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
         eos_audio, _ = self.add_codec_eos(audio, audio_len)
-        loss = self.loss(output, eos_audio[:, [0, random_channel]])
+        ar_loss, nar_loss, total_loss = self.loss(
+            output, eos_audio[:, [0, random_channel]]
+        )
         self.acc(output, eos_audio[:, [0, random_channel]])
+        self.ar_acc(ar_output.transpose(1, 2), eos_audio[:, 0])
+        self.nar_acc(nar_output.transpose(1, 2), eos_audio[:, random_channel])
         if mode == "train":
-            self.log(f"{mode}/loss", loss, on_step=True)
+            self.log(f"{mode}/loss", total_loss, on_step=True)
+            self.log(f"{mode}/ar_loss", ar_loss, on_step=True)
+            self.log(f"{mode}/nar_loss", nar_loss, on_step=True)
             self.log(f"{mode}/acc", self.acc, on_step=True)
+            self.log(f"{mode}/ar_acc", self.ar_acc, on_step=True)
+            self.log(f"{mode}/nar_acc", self.nar_acc, on_step=True)
         else:
-            self.log(f"{mode}/loss", loss, on_epoch=True, sync_dist=True)
+            self.log(f"{mode}/loss", total_loss, on_epoch=True, sync_dist=True)
+            self.log(f"{mode}/ar_loss", ar_loss, on_epoch=True, sync_dist=True)
+            self.log(f"{mode}/nar_loss", nar_loss, on_epoch=True, sync_dist=True)
             self.log(f"{mode}/acc", self.acc, on_epoch=True, sync_dist=True)
-        return loss
+            self.log(f"{mode}/ar_acc", self.ar_acc, on_epoch=True, sync_dist=True)
+            self.log(f"{mode}/nar_acc", self.nar_acc, on_epoch=True, sync_dist=True)
+        return total_loss
 
     def training_step(self, batch: CollatedBatch) -> torch.Tensor:
         loss = self.single_step(batch, "train")
