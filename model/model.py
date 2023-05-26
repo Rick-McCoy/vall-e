@@ -9,7 +9,7 @@ from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
 
 from config.config import Config
-from data.audio import codec_to_audio, mel_energy
+from data.audio import codec_to_audio, mel_spectrogram
 from data.datamodule import CollatedBatch
 from data.text import CHAR_TO_CODE, VOCAB_SIZE, encode_text
 from model.autoregressive import AutoRegressive
@@ -419,7 +419,7 @@ class VallE(LightningModule):
         data = []
         for codec in codec_list:
             audio = codec_to_audio(codec, sample_rate=self.sample_rate)
-            mel, _ = mel_energy(
+            mel = mel_spectrogram(
                 audio.squeeze(1),
                 n_fft=1024,
                 num_mels=80,

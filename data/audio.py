@@ -1,17 +1,17 @@
 from pathlib import Path
-from typing import Optional, Tuple, cast
+from typing import Literal, Optional, cast
 
-import librosa
 import numpy as np
 import soundfile as sf
 import torch
+from torchaudio.transforms import MelSpectrogram, Resample
 
 from encodec.model import EncodecModel, EncodedFrame
 from encodec.modules.lstm import SLSTM
 from utils.model import remove_weight_norm
 
 
-def load_audio(path: Path, target_sr: int, channels: int) -> np.ndarray:
+def load_audio(path: Path, target_sr: int, channels: Literal[1, 2]) -> np.ndarray:
     """Loads an audio file into a numpy array.
 
     Args:
@@ -25,7 +25,8 @@ def load_audio(path: Path, target_sr: int, channels: int) -> np.ndarray:
     audio, sr = sf.read(path, always_2d=True, dtype="float32")
     audio = audio.T
     if sr != target_sr:
-        audio = librosa.resample(y=audio, orig_sr=sr, target_sr=target_sr)
+        resampler = Resample(orig_freq=sr, new_freq=target_sr)
+        audio = resampler(torch.from_numpy(audio)).numpy()
     if audio.shape[0] == 1 and channels == 2:
         audio = np.repeat(audio, 2, axis=0)
     elif audio.shape[0] == 2 and channels == 1:
@@ -130,7 +131,7 @@ def codec_to_audio(
         return encodec_model.decode(frames)
 
 
-def mel_energy(
+def mel_spectrogram(
     audio: torch.Tensor,
     n_fft: int,
     num_mels: int,
@@ -140,33 +141,22 @@ def mel_energy(
     fmin: float,
     fmax: Optional[float] = None,
     center=False,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> torch.Tensor:
     with torch.no_grad():
+        transform = MelSpectrogram(
+            sample_rate=sampling_rate,
+            n_fft=n_fft,
+            win_length=win_size,
+            hop_length=hop_size,
+            f_min=fmin,
+            f_max=fmax,
+            n_mels=num_mels,
+            window_fn=torch.hann_window,
+            power=1,
+            center=center,
+        ).to(audio.device)
         pad_size = (n_fft - hop_size) // 2
         audio = torch.nn.functional.pad(audio, (pad_size, pad_size), "reflect")
-        spec = torch.stft(
-            audio,
-            n_fft=n_fft,
-            hop_length=hop_size,
-            win_length=win_size,
-            window=torch.hann_window(win_size).to(audio),
-            center=center,
-            pad_mode="reflect",
-            normalized=False,
-            onesided=True,
-            return_complex=True,
-        )
-        spec = torch.abs(spec)
-        energy = torch.norm(spec, dim=1)
-        mel_basis = torch.from_numpy(
-            librosa.filters.mel(
-                sr=sampling_rate,
-                n_fft=n_fft,
-                n_mels=num_mels,
-                fmin=fmin,
-                fmax=fmax,
-            )
-        ).to(spec)
-        mel_spec = torch.einsum("ij,bjk->bik", mel_basis, spec)
+        mel_spec = transform(audio)
         mel_spec = torch.log(torch.clamp(mel_spec, min=1e-5))
-        return mel_spec, energy
+        return mel_spec
