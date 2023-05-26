@@ -8,39 +8,30 @@ from torch.nn.modules.activation import MultiheadAttention
 from model.adaln import AdaptiveLayerNorm
 
 
-class TransformerDecoder(nn.TransformerDecoder):
+class TransformerEncoder(nn.TransformerEncoder):
     def forward(
         self,
-        tgt: Tensor,
-        memory: Tensor,
+        src: Tensor,
         layer: int,
-        tgt_mask: Optional[Tensor] = None,
-        memory_mask: Optional[Tensor] = None,
-        tgt_key_padding_mask: Optional[Tensor] = None,
-        memory_key_padding_mask: Optional[Tensor] = None,
+        mask: Optional[Tensor] = None,
+        src_key_padding_mask: Optional[Tensor] = None,
+        is_causal: bool = False,
     ) -> Tensor:
-        output = tgt
+        output = src
 
         for mod in self.layers:
             output = torch.utils.checkpoint.checkpoint(
-                mod,
-                output,
-                memory,
-                layer,
-                tgt_mask,
-                memory_mask,
-                tgt_key_padding_mask,
-                memory_key_padding_mask,
+                mod, output, layer, mask, src_key_padding_mask, is_causal
             )
+            assert output is not None
 
         if self.norm is not None:
             output = self.norm(output)
 
-        assert output is not None
         return output
 
 
-class TransformerDecoderLayer(nn.Module):
+class TransformerEncoderLayer(nn.Module):
     __constants__ = ["norm_first"]
 
     def __init__(
@@ -62,9 +53,6 @@ class TransformerDecoderLayer(nn.Module):
         self.self_attn = MultiheadAttention(
             d_model, nhead, dropout=dropout, batch_first=batch_first, **factory_kwargs
         )
-        self.multihead_attn = MultiheadAttention(
-            d_model, nhead, dropout=dropout, batch_first=batch_first, **factory_kwargs
-        )
         # Implementation of Feedforward model
         self.linear1 = nn.Linear(d_model, dim_feedforward, **factory_kwargs)
         self.dropout = nn.Dropout(dropout)
@@ -73,10 +61,8 @@ class TransformerDecoderLayer(nn.Module):
         self.norm_first = norm_first
         self.norm1 = AdaptiveLayerNorm(d_model=d_model, n_channels=n_channels)
         self.norm2 = AdaptiveLayerNorm(d_model=d_model, n_channels=n_channels)
-        self.norm3 = AdaptiveLayerNorm(d_model=d_model, n_channels=n_channels)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
-        self.dropout3 = nn.Dropout(dropout)
 
         self.activation = activation
 
@@ -87,42 +73,30 @@ class TransformerDecoderLayer(nn.Module):
 
     def forward(
         self,
-        tgt: Tensor,
-        memory: Tensor,
+        src: Tensor,
         layer: int,
-        tgt_mask: Optional[Tensor] = None,
-        memory_mask: Optional[Tensor] = None,
-        tgt_key_padding_mask: Optional[Tensor] = None,
-        memory_key_padding_mask: Optional[Tensor] = None,
-        tgt_is_causal: bool = False,
-        memory_is_causal: bool = False,
+        src_mask: Optional[Tensor] = None,
+        src_key_padding_mask: Optional[Tensor] = None,
+        is_causal: bool = False,
     ) -> Tensor:
-        x = tgt
+        x = src
         if self.norm_first:
             x = x + self._sa_block(
-                self.norm1(x, layer), tgt_mask, tgt_key_padding_mask, tgt_is_causal
+                self.norm1(x, layer),
+                src_mask,
+                src_key_padding_mask,
+                is_causal=is_causal,
             )
-            x = x + self._mha_block(
-                self.norm2(x, layer),
-                memory,
-                memory_mask,
-                memory_key_padding_mask,
-                memory_is_causal,
-            )
-            x = x + self._ff_block(self.norm3(x, layer))
+            x = x + self._ff_block(self.norm2(x, layer))
         else:
             x = self.norm1(
-                x + self._sa_block(x, tgt_mask, tgt_key_padding_mask, tgt_is_causal),
-                layer,
-            )
-            x = self.norm2(
                 x
-                + self._mha_block(
-                    x, memory, memory_mask, memory_key_padding_mask, memory_is_causal
+                + self._sa_block(
+                    x, src_mask, src_key_padding_mask, is_causal=is_causal
                 ),
                 layer,
             )
-            x = self.norm3(x + self._ff_block(x), layer)
+            x = self.norm2(x + self._ff_block(x), layer)
 
         return x
 
@@ -140,32 +114,12 @@ class TransformerDecoderLayer(nn.Module):
             x,
             attn_mask=attn_mask,
             key_padding_mask=key_padding_mask,
-            is_causal=is_causal,
             need_weights=False,
+            is_causal=is_causal,
         )[0]
         return self.dropout1(x)
-
-    # multihead attention block
-    def _mha_block(
-        self,
-        x: Tensor,
-        mem: Tensor,
-        attn_mask: Optional[Tensor],
-        key_padding_mask: Optional[Tensor],
-        is_causal: bool = False,
-    ) -> Tensor:
-        x = self.multihead_attn(
-            x,
-            mem,
-            mem,
-            attn_mask=attn_mask,
-            key_padding_mask=key_padding_mask,
-            is_causal=is_causal,
-            need_weights=False,
-        )[0]
-        return self.dropout2(x)
 
     # feed forward block
     def _ff_block(self, x: Tensor) -> Tensor:
         x = self.linear2(self.dropout(self.activation(self.linear1(x))))
-        return self.dropout3(x)
+        return self.dropout2(x)
