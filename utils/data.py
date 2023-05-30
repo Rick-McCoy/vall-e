@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
+plt.switch_backend("agg")
+
 
 def load_metadata(
     csv_path: Path,
