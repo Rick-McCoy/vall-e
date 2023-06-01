@@ -7,6 +7,7 @@ from lightning import LightningModule
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
+from tqdm import tqdm
 
 from config.config import Config
 from data.audio import codec_to_audio, mel_spectrogram
@@ -163,7 +164,7 @@ class VallE(LightningModule):
         text_len: torch.Tensor,
         audio_len: torch.Tensor,
         enrolled_audio_len: torch.Tensor,
-        channel: torch.Tensor,
+        channel: int,
     ) -> torch.Tensor:
         text, text_len = self.add_text_eos(text, text_len)
         enrolled_audio, enrolled_audio_len = self.slice_audio(
@@ -212,7 +213,7 @@ class VallE(LightningModule):
     ) -> torch.Tensor:
         ar_output = self.ar_forward(text, audio, text_len, audio_len)
         nar_output_list = []
-        for channel in torch.arange(1, self.codec_channels).long().to(audio.device):
+        for channel in range(1, self.codec_channels):
             nar_output_list.append(
                 self.nar_forward(
                     text,
@@ -254,7 +255,7 @@ class VallE(LightningModule):
         concat_text_len = text_len + enrolled_text_len + 1
         audio = torch.empty_like(enrolled_audio)[:, 0, :0]
         audio_len = torch.zeros_like(enrolled_audio_len)
-        for _ in range(self.max_infer_len):
+        for _ in tqdm(range(self.max_infer_len)):
             ar_output = self.autoregressive(
                 concat_text,
                 torch.cat([enrolled_audio[:, 0], audio], dim=-1),
@@ -267,7 +268,7 @@ class VallE(LightningModule):
             audio_len += 1
 
         audio = audio.unsqueeze(1)
-        for channel in torch.arange(1, self.codec_channels).long().to(text.device):
+        for channel in range(1, self.codec_channels):
             nar_audio = self.nar_forward(
                 text,
                 audio,
@@ -293,7 +294,7 @@ class VallE(LightningModule):
             enrolled_audio_len,
         ) = self.parse_batch(batch)
         ar_output = self.ar_forward(text, audio, text_len, audio_len)
-        random_channel = torch.randint(1, self.codec_channels, size=())
+        random_channel = int(torch.randint(1, self.codec_channels, size=()).item())
         nar_output = self.nar_forward(
             text,
             audio,
@@ -384,17 +385,15 @@ class VallE(LightningModule):
             enrolled_audio,
             enrolled_audio_len,
         ) = self.parse_batch(batch)
-        longest_audio_index = audio_len.argmax()
-        longest_audio_len = audio_len[longest_audio_index].unsqueeze(0)
-        longest_audio = audio[longest_audio_index, :longest_audio_len].unsqueeze(0)
-        longest_text_len = text_len[longest_audio_index].unsqueeze(0)
-        longest_text = text[longest_audio_index, :longest_text_len].unsqueeze(0)
-        longest_enrolled_audio_len = enrolled_audio_len[longest_audio_index].unsqueeze(
-            0
-        )
+        longest_audio_index = audio_len.argmax().item()
+        longest_audio_len = audio_len[[longest_audio_index]]
+        longest_audio = audio[[longest_audio_index], :longest_audio_len]
+        longest_text_len = text_len[[longest_audio_index]]
+        longest_text = text[[longest_audio_index], :longest_text_len]
+        longest_enrolled_audio_len = enrolled_audio_len[[longest_audio_index]]
         longest_enrolled_audio = enrolled_audio[
-            longest_audio_index, :longest_enrolled_audio_len
-        ].unsqueeze(0)
+            [longest_audio_index], :longest_enrolled_audio_len
+        ]
         with torch.no_grad():
             pred = self.all_forward(
                 longest_text,
@@ -404,7 +403,7 @@ class VallE(LightningModule):
                 longest_audio_len,
                 longest_enrolled_audio_len,
             )[..., : self.codec_pad - 1].argmax(dim=-1)
-            gen = self(
+            gen: torch.Tensor = self(
                 text=self.gen_text,
                 enrolled_text=longest_text,
                 enrolled_audio=longest_audio,
@@ -416,7 +415,8 @@ class VallE(LightningModule):
             codec_list = [longest_audio, pred]
         else:
             codec_list = [longest_audio, pred, gen]
-        data = []
+
+        data: list[tuple[np.ndarray, np.ndarray]] = []
         for codec in codec_list:
             audio = codec_to_audio(codec, sample_rate=self.sample_rate)
             mel = mel_spectrogram(
@@ -432,7 +432,7 @@ class VallE(LightningModule):
             audio_cpu = audio.squeeze().detach().cpu() * 2**15
             audio_numpy = audio_cpu.numpy().astype(np.int16)
             mel_image = plot_mel_spectrogram(mel.squeeze().detach().cpu().numpy())
-            data.append([audio_numpy, mel_image])
+            data.append((audio_numpy, mel_image))
 
         if isinstance(self.logger, WandbLogger):
             self.logger.log_table(

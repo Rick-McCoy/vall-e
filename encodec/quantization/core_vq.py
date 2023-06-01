@@ -287,8 +287,11 @@ class ResidualVectorQuantization(nn.Module):
 
     def __init__(self, *, num_quantizers, **kwargs):
         super().__init__()
-        self.layers = nn.ModuleList(
-            [VectorQuantization(**kwargs) for _ in range(num_quantizers)]
+        self.layers = tp.cast(
+            list[VectorQuantization],
+            nn.ModuleList(
+                [VectorQuantization(**kwargs) for _ in range(num_quantizers)]
+            ),
         )
 
     def forward(self, x, n_q: tp.Optional[int] = None):
