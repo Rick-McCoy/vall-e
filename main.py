@@ -22,7 +22,8 @@ from config.model.config import ModelConfig
 from config.train.config import TrainConfig
 from data.datamodule import VallEDataModule
 from model.model import VallE
-from utils.model import remove_weight_norm
+
+# from utils.model import remove_weight_norm
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=Config)
@@ -107,15 +108,15 @@ def main(cfg: Config):
     trainer.fit(model=compiled_model, datamodule=datamodule)
     trainer.test(model=compiled_model, datamodule=datamodule)
 
-    remove_weight_norm(compiled_model)
-    script_model = torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
-        compiled_model
-    )
-    save_path = Path("model-store")
-    save_path.mkdir(exist_ok=True)
-    torch.jit.save(  # pyright: ignore [reportPrivateImportUsage]
-        script_model, save_path / "model.pt"
-    )
+    # remove_weight_norm(compiled_model)
+    # script_model = torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
+    #     compiled_model
+    # )
+    # save_path = Path("model-store")
+    # save_path.mkdir(exist_ok=True)
+    # torch.jit.save(  # pyright: ignore [reportPrivateImportUsage]
+    #     script_model, save_path / "model.pt"
+    # )
 
 
 if __name__ == "__main__":
