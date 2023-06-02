@@ -47,11 +47,6 @@ class VallE(LightningModule):
         self.autoregressive = AutoRegressive(cfg)
         self.nonautoregressive = NonAutoRegressive(cfg)
         self.loss = VallELoss(cfg)
-        self.acc = MulticlassAccuracy(
-            num_classes=2**cfg.data.codec_bits + 2,
-            top_k=1,
-            ignore_index=2**cfg.data.codec_bits + 1,
-        )
         self.ar_acc = MulticlassAccuracy(
             num_classes=2**cfg.data.codec_bits + 2,
             top_k=1,
@@ -111,6 +106,15 @@ class VallE(LightningModule):
         )
         return codec.transpose(1, 2), codec_len
 
+    def remove_codec_eos(self, codec: torch.Tensor, codec_len: torch.Tensor):
+        codec_list = unpad_sequence(codec, codec_len, batch_first=True)
+        codec_list = [t[:-1] for t in codec_list]
+        codec_len = codec_len - 1
+        codec = torch.nn.utils.rnn.pad_sequence(
+            codec_list, batch_first=True, padding_value=float(self.codec_pad)
+        )
+        return codec, codec_len
+
     def slice_audio(self, audio: torch.Tensor, audio_len: torch.Tensor):
         audio_slice_list = []
         audio_slice_len_list: list[int] = []
@@ -164,7 +168,6 @@ class VallE(LightningModule):
         text_len: torch.Tensor,
         audio_len: torch.Tensor,
         enrolled_audio_len: torch.Tensor,
-        channel: int,
     ) -> torch.Tensor:
         text, text_len = self.add_text_eos(text, text_len)
         enrolled_audio, enrolled_audio_len = self.slice_audio(
@@ -175,12 +178,11 @@ class VallE(LightningModule):
         )
         nar_output = self.nonautoregressive(
             text,
-            audio[:, :channel],
+            audio,
             enrolled_audio,
             text_len,
             audio_len,
             enrolled_audio_len,
-            channel,
         )
         nar_output_list = []
         for (
@@ -195,7 +197,6 @@ class VallE(LightningModule):
                     + enrolled_audio_len_item : text_len_item
                     + enrolled_audio_len_item
                     + audio_len_item
-                    + 1
                 ]
             )
         return torch.nn.utils.rnn.pad_sequence(
@@ -211,22 +212,24 @@ class VallE(LightningModule):
         audio_len: torch.Tensor,
         enrolled_audio_len: torch.Tensor,
     ) -> torch.Tensor:
-        ar_output = self.ar_forward(text, audio, text_len, audio_len)
-        nar_output_list = []
+        output_list = [
+            self.remove_codec_eos(
+                self.ar_forward(text, audio, text_len, audio_len), audio_len + 1
+            )[0]
+        ]
         for channel in range(1, self.codec_channels):
-            nar_output_list.append(
+            output_list.append(
                 self.nar_forward(
                     text,
-                    audio,
+                    audio[:, :channel],
                     enrolled_audio,
                     text_len,
                     audio_len,
                     enrolled_audio_len,
-                    channel,
                 )
             )
 
-        return torch.stack([ar_output] + nar_output_list, dim=1)
+        return torch.stack(output_list, dim=1)
 
     def forward(
         self,
@@ -271,13 +274,12 @@ class VallE(LightningModule):
         for channel in range(1, self.codec_channels):
             nar_audio = self.nar_forward(
                 text,
-                audio,
+                audio[:, :channel],
                 enrolled_audio,
                 text_len,
                 audio_len,
                 enrolled_audio_len,
-                channel,
-            )[:, :-1, : self.codec_pad - 1].argmax(dim=-1)
+            )[..., : self.codec_pad - 1].argmax(dim=-1)
             audio = torch.cat([audio, nar_audio.unsqueeze(1)], dim=1)
 
         return audio
@@ -297,33 +299,26 @@ class VallE(LightningModule):
         random_channel = int(torch.randint(1, self.codec_channels, size=()).item())
         nar_output = self.nar_forward(
             text,
-            audio,
+            audio[:, :random_channel],
             enrolled_audio,
             text_len,
             audio_len,
             enrolled_audio_len,
-            random_channel,
         )
-        output = torch.einsum("bnlc->bcnl", torch.stack([ar_output, nar_output], dim=1))
         eos_audio, _ = self.add_codec_eos(audio, audio_len)
-        ar_loss, nar_loss, total_loss = self.loss(
-            output, eos_audio[:, [0, random_channel]]
-        )
-        self.acc(output, eos_audio[:, [0, random_channel]])
+        ar_loss = self.loss(ar_output.transpose(1, 2), eos_audio[:, 0])
+        nar_loss = self.loss(nar_output.transpose(1, 2), audio[:, random_channel])
+        total_loss = (ar_loss + nar_loss) / 2
         self.ar_acc(ar_output.transpose(1, 2), eos_audio[:, 0])
-        self.nar_acc(nar_output.transpose(1, 2), eos_audio[:, random_channel])
+        self.nar_acc(nar_output.transpose(1, 2), audio[:, random_channel])
         if mode == "train":
-            self.log(f"{mode}/loss", total_loss, on_step=True)
             self.log(f"{mode}/ar_loss", ar_loss, on_step=True)
             self.log(f"{mode}/nar_loss", nar_loss, on_step=True)
-            self.log(f"{mode}/acc", self.acc, on_step=True)
             self.log(f"{mode}/ar_acc", self.ar_acc, on_step=True)
             self.log(f"{mode}/nar_acc", self.nar_acc, on_step=True)
         else:
-            self.log(f"{mode}/loss", total_loss, on_epoch=True, sync_dist=True)
             self.log(f"{mode}/ar_loss", ar_loss, on_epoch=True, sync_dist=True)
             self.log(f"{mode}/nar_loss", nar_loss, on_epoch=True, sync_dist=True)
-            self.log(f"{mode}/acc", self.acc, on_epoch=True, sync_dist=True)
             self.log(f"{mode}/ar_acc", self.ar_acc, on_epoch=True, sync_dist=True)
             self.log(f"{mode}/nar_acc", self.nar_acc, on_epoch=True, sync_dist=True)
         return total_loss

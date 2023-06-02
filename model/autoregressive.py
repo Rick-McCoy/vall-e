@@ -4,7 +4,8 @@ from torch import Tensor, nn
 from config.config import Config
 from data.text import VOCAB_SIZE
 from model.positional_encoding import PositionalEncoding
-from model.transformer import TransformerEncoder, TransformerEncoderLayer
+
+# from model.transformer import TransformerEncoder, TransformerEncoderLayer
 
 
 class AutoRegressive(nn.Module):
@@ -13,22 +14,20 @@ class AutoRegressive(nn.Module):
         self.cfg = cfg
         self.nhead = cfg.model.nhead
         self.text_embedding = nn.Embedding(
-            num_embeddings=VOCAB_SIZE,
-            embedding_dim=cfg.model.hidden_dim,
+            num_embeddings=VOCAB_SIZE, embedding_dim=cfg.model.hidden_dim
         )
         self.audio_embedding = nn.Embedding(
             num_embeddings=2**cfg.data.codec_bits + 2,
             embedding_dim=cfg.model.hidden_dim,
         )
         self.positional_encoding = PositionalEncoding(
-            d_model=cfg.model.hidden_dim,
-            dropout=cfg.model.dropout,
+            d_model=cfg.model.hidden_dim, dropout=cfg.model.dropout
         )
-        self.transformer_encoder = TransformerEncoder(
-            encoder_layer=TransformerEncoderLayer(
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layer=nn.TransformerEncoderLayer(
                 d_model=cfg.model.hidden_dim,
                 nhead=cfg.model.nhead,
-                n_channels=1,
+                # n_channels=1,
                 dim_feedforward=cfg.model.dim_feedforward,
                 dropout=cfg.model.dropout,
                 batch_first=True,
@@ -55,14 +54,8 @@ class AutoRegressive(nn.Module):
 
         max_len = int((text_len_batch + audio_len_batch).max().item())
         embed_list = []
-        mask = (
-            torch.ones((max_len, max_len), dtype=torch.bool, device=text.device)
-            .triu(diagonal=1)
-            .unsqueeze(0)
-            .repeat_interleave(repeats=text.shape[0], dim=0)
-        )
-        for text_embed, audio_embed, text_len, audio_len, mask_item in zip(
-            text_embedding, audio_embedding, text_len_batch, audio_len_batch, mask
+        for text_embed, audio_embed, text_len, audio_len in zip(
+            text_embedding, audio_embedding, text_len_batch, audio_len_batch
         ):
             embed_list.append(
                 torch.cat(
@@ -73,16 +66,21 @@ class AutoRegressive(nn.Module):
                     dim=0,
                 ),
             )
-            mask_item[:, :text_len] = False
 
         embed = torch.nn.utils.rnn.pad_sequence(embed_list, batch_first=True)
         total_len = text_len_batch + audio_len_batch
+        mask = torch.ones(
+            (max_len, max_len), dtype=torch.bool, device=text.device
+        ).triu(diagonal=1)
         padding_mask = torch.arange(max_len, device=text.device).unsqueeze(
             0
         ) >= total_len.unsqueeze(1)
-        mask = mask.repeat_interleave(repeats=self.nhead, dim=0)
         transformer_output = self.transformer_encoder(
-            embed, layer=0, mask=mask, src_key_padding_mask=padding_mask
+            # embed, layer=0, src_key_padding_mask=padding_mask, is_causal=True
+            embed,
+            mask=mask,
+            src_key_padding_mask=padding_mask,
+            is_causal=True,
         )
         output = self.linear(transformer_output)
         return output

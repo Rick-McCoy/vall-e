@@ -5,7 +5,8 @@ from torch.nn import functional as F
 from config.config import Config
 from data.text import VOCAB_SIZE
 from model.positional_encoding import PositionalEncoding
-from model.transformer import TransformerEncoder, TransformerEncoderLayer
+
+# from model.transformer import TransformerEncoder, TransformerEncoderLayer
 
 
 class NonAutoRegressive(nn.Module):
@@ -29,17 +30,14 @@ class NonAutoRegressive(nn.Module):
             * (2**cfg.data.codec_bits + 2),
         )
         self.offset: Tensor
-        self.index_embedding_weight = nn.Parameter(
-            torch.randn(cfg.data.codec_channels, cfg.model.hidden_dim)
-        )
         self.positional_encoding = PositionalEncoding(
             d_model=cfg.model.hidden_dim, dropout=cfg.model.dropout
         )
-        self.transformer_encoder = TransformerEncoder(
-            encoder_layer=TransformerEncoderLayer(
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layer=nn.TransformerEncoderLayer(
                 d_model=cfg.model.hidden_dim,
                 nhead=cfg.model.nhead,
-                n_channels=cfg.data.codec_channels,
+                # n_channels=cfg.data.codec_channels,
                 dim_feedforward=cfg.model.dim_feedforward,
                 dropout=cfg.model.dropout,
                 batch_first=True,
@@ -56,9 +54,9 @@ class NonAutoRegressive(nn.Module):
         text_len_batch: Tensor,
         audio_len_batch: Tensor,
         enrolled_audio_len_batch: Tensor,
-        index: int,
     ):
         text_embedding = self.positional_encoding(self.text_embedding(text))
+        index = audio.shape[1]
         audio = audio + self.offset[:, :index]
         audio_embedding = self.positional_encoding(
             F.embedding(audio, self.shared_audio_weight.flatten(0, 1)).sum(dim=1)
@@ -69,7 +67,6 @@ class NonAutoRegressive(nn.Module):
                 dim=1
             )
         )
-        index_embedding = self.index_embedding_weight[[index]]
 
         embed_list = []
         for (
@@ -93,7 +90,6 @@ class NonAutoRegressive(nn.Module):
                         text_embed[:text_len],
                         enrolled_audio_embed[:enrolled_audio_len],
                         audio_embed[:audio_len],
-                        index_embedding,
                     ],
                     dim=0,
                 ),
@@ -106,7 +102,9 @@ class NonAutoRegressive(nn.Module):
         ) >= total_len.unsqueeze(1)
 
         transformer_output = self.transformer_encoder(
-            embed, layer=index, src_key_padding_mask=padding_mask
+            # embed, layer=index, src_key_padding_mask=padding_mask
+            embed,
+            src_key_padding_mask=padding_mask,
         )
         output = torch.einsum(
             "blc,dc->bld", transformer_output, self.shared_audio_weight[index]

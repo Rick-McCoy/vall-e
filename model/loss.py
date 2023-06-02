@@ -11,8 +11,5 @@ class VallELoss(nn.Module):
             ignore_index=2**cfg.data.codec_bits + 1
         )
 
-    def forward(self, logit: Tensor, target: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-        ar_loss = self.cross_entropy(logit[:, :, 0], target[:, 0])
-        nar_loss = self.cross_entropy(logit[:, :, 1:], target[:, 1:])
-        total_loss = self.cross_entropy(logit, target)
-        return ar_loss, nar_loss, total_loss
+    def forward(self, logit: Tensor, target: Tensor) -> Tensor:
+        return self.cross_entropy(logit, target)
