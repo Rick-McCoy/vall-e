@@ -4,8 +4,7 @@ from torch import Tensor, nn
 from config.config import Config
 from data.text import VOCAB_SIZE
 from model.positional_encoding import PositionalEncoding
-
-# from model.transformer import TransformerEncoder, TransformerEncoderLayer
+from model.transformer import TransformerEncoder, TransformerEncoderLayer
 
 
 class AutoRegressive(nn.Module):
@@ -23,11 +22,11 @@ class AutoRegressive(nn.Module):
         self.positional_encoding = PositionalEncoding(
             d_model=cfg.model.hidden_dim, dropout=cfg.model.dropout
         )
-        self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer=nn.TransformerEncoderLayer(
+        self.transformer_encoder = TransformerEncoder(
+            encoder_layer=TransformerEncoderLayer(
                 d_model=cfg.model.hidden_dim,
                 nhead=cfg.model.nhead,
-                # n_channels=1,
+                n_channels=1,
                 dim_feedforward=cfg.model.dim_feedforward,
                 dropout=cfg.model.dropout,
                 batch_first=True,
@@ -76,11 +75,7 @@ class AutoRegressive(nn.Module):
             0
         ) >= total_len.unsqueeze(1)
         transformer_output = self.transformer_encoder(
-            # embed, layer=0, src_key_padding_mask=padding_mask, is_causal=True
-            embed,
-            mask=mask,
-            src_key_padding_mask=padding_mask,
-            is_causal=True,
+            embed, layer=0, mask=mask, src_key_padding_mask=padding_mask, is_causal=True
         )
         output = self.linear(transformer_output)
         return output

@@ -7,7 +7,6 @@ from lightning import LightningModule
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
-from tqdm import tqdm
 
 from config.config import Config
 from data.audio import codec_to_audio, mel_spectrogram
@@ -258,7 +257,7 @@ class VallE(LightningModule):
         concat_text_len = text_len + enrolled_text_len + 1
         audio = torch.empty_like(enrolled_audio)[:, 0, :0]
         audio_len = torch.zeros_like(enrolled_audio_len)
-        for _ in tqdm(range(self.max_infer_len)):
+        for _ in range(self.max_infer_len):
             ar_output = self.autoregressive(
                 concat_text,
                 torch.cat([enrolled_audio[:, 0], audio], dim=-1),
