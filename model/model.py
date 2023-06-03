@@ -313,11 +313,13 @@ class VallE(LightningModule):
         if mode == "train":
             self.log(f"{mode}/ar_loss", ar_loss, on_step=True)
             self.log(f"{mode}/nar_loss", nar_loss, on_step=True)
+            self.log(f"{mode}/loss", total_loss, on_step=True)
             self.log(f"{mode}/ar_acc", self.ar_acc, on_step=True)
             self.log(f"{mode}/nar_acc", self.nar_acc, on_step=True)
         else:
             self.log(f"{mode}/ar_loss", ar_loss, on_epoch=True, sync_dist=True)
             self.log(f"{mode}/nar_loss", nar_loss, on_epoch=True, sync_dist=True)
+            self.log(f"{mode}/loss", total_loss, on_epoch=True, sync_dist=True)
             self.log(f"{mode}/ar_acc", self.ar_acc, on_epoch=True, sync_dist=True)
             self.log(f"{mode}/nar_acc", self.nar_acc, on_epoch=True, sync_dist=True)
         return total_loss

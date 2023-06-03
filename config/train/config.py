@@ -20,3 +20,6 @@ class TrainConfig:
     precision: str = "32"
     project: str = "vall-e"
     wandb: bool = True
+
+    def __post_init__(self):
+        assert self.precision == "32" or self.precision == "16-mixed"
