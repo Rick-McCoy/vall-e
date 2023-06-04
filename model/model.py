@@ -297,7 +297,7 @@ class VallE(LightningModule):
             enrolled_audio_len,
         ) = self.parse_batch(batch)
         ar_output = self.ar_forward(text, audio, text_len, audio_len)
-        random_channel = int(torch.randint(1, self.codec_channels, size=()).item())
+        random_channel = torch.randint(1, self.codec_channels, size=())
         nar_output = self.nar_forward(
             text,
             audio[:, :random_channel],

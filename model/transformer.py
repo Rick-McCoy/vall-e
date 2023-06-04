@@ -3,7 +3,6 @@ from typing import Callable, Optional
 import torch.utils.checkpoint
 from torch import Tensor, nn
 from torch.nn import functional as F
-from torch.nn.modules.activation import MultiheadAttention
 
 from model.adaln import AdaptiveLayerNorm
 
@@ -31,7 +30,7 @@ class TransformerEncoder(nn.TransformerEncoder):
         return output
 
 
-class TransformerEncoderLayer(nn.Module):
+class TransformerEncoderLayer(nn.TransformerEncoderLayer):
     __constants__ = ["norm_first"]
 
     def __init__(
@@ -48,32 +47,24 @@ class TransformerEncoderLayer(nn.Module):
         device=None,
         dtype=None,
     ) -> None:
-        factory_kwargs = {"device": device, "dtype": dtype}
-        super().__init__()
-        self.self_attn = MultiheadAttention(
-            d_model, nhead, dropout=dropout, batch_first=batch_first, **factory_kwargs
+        super().__init__(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            activation=activation,
+            layer_norm_eps=layer_norm_eps,
+            batch_first=batch_first,
+            norm_first=norm_first,
+            device=device,
+            dtype=dtype,
         )
-        # Implementation of Feedforward model
-        self.linear1 = nn.Linear(d_model, dim_feedforward, **factory_kwargs)
-        self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(dim_feedforward, d_model, **factory_kwargs)
-
-        self.norm_first = norm_first
         self.norm1 = AdaptiveLayerNorm(
             d_model=d_model, n_channels=n_channels, eps=layer_norm_eps
         )
         self.norm2 = AdaptiveLayerNorm(
             d_model=d_model, n_channels=n_channels, eps=layer_norm_eps
         )
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
-
-        self.activation = activation
-
-    def __setstate__(self, state):
-        if "activation" not in state:
-            state["activation"] = F.relu
-        super().__setstate__(state)
 
     def forward(
         self,
@@ -103,27 +94,3 @@ class TransformerEncoderLayer(nn.Module):
             x = self.norm2(x + self._ff_block(x), layer)
 
         return x
-
-    # self-attention block
-    def _sa_block(
-        self,
-        x: Tensor,
-        attn_mask: Optional[Tensor],
-        key_padding_mask: Optional[Tensor],
-        is_causal: bool = False,
-    ) -> Tensor:
-        x = self.self_attn(
-            x,
-            x,
-            x,
-            attn_mask=attn_mask,
-            key_padding_mask=key_padding_mask,
-            need_weights=False,
-            is_causal=is_causal,
-        )[0]
-        return self.dropout1(x)
-
-    # feed forward block
-    def _ff_block(self, x: Tensor) -> Tensor:
-        x = self.linear2(self.dropout(self.activation(self.linear1(x))))
-        return self.dropout2(x)
