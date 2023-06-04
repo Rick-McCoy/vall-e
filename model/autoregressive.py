@@ -2,7 +2,7 @@ import torch
 from torch import Tensor, nn
 
 from config.config import Config
-from data.text import VOCAB_SIZE
+from data.text import CHAR_TO_CODE, VOCAB_SIZE
 from model.positional_encoding import PositionalEncoding
 from model.transformer import TransformerEncoder, TransformerEncoderLayer
 
@@ -13,11 +13,14 @@ class AutoRegressive(nn.Module):
         self.cfg = cfg
         self.nhead = cfg.model.nhead
         self.text_embedding = nn.Embedding(
-            num_embeddings=VOCAB_SIZE, embedding_dim=cfg.model.hidden_dim
+            num_embeddings=VOCAB_SIZE,
+            embedding_dim=cfg.model.hidden_dim,
+            padding_idx=CHAR_TO_CODE["<PAD>"],
         )
         self.audio_embedding = nn.Embedding(
             num_embeddings=2**cfg.data.codec_bits + 2,
             embedding_dim=cfg.model.hidden_dim,
+            padding_idx=2**cfg.data.codec_bits + 1,
         )
         self.positional_encoding = PositionalEncoding(
             d_model=cfg.model.hidden_dim, dropout=cfg.model.dropout
@@ -30,7 +33,6 @@ class AutoRegressive(nn.Module):
                 dim_feedforward=cfg.model.dim_feedforward,
                 dropout=cfg.model.dropout,
                 batch_first=True,
-                norm_first=True,
             ),
             num_layers=cfg.model.num_layers,
         )

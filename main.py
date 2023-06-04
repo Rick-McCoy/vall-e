@@ -4,7 +4,6 @@ from typing import cast
 
 import hydra
 import torch
-import torch.nn.utils
 import wandb
 from hydra.core.config_store import ConfigStore
 from lightning import Trainer
@@ -105,18 +104,15 @@ def main(cfg: Config):
     if cfg.train.auto_batch and not cfg.train.fast_dev_run:
         tuner.scale_batch_size(model=compiled_model, datamodule=datamodule)
 
-    trainer.fit(model=compiled_model, datamodule=datamodule)
+    trainer.fit(
+        model=compiled_model, datamodule=datamodule, ckpt_path=cfg.train.checkpoint_path
+    )
     trainer.test(model=compiled_model, datamodule=datamodule)
 
     # remove_weight_norm(compiled_model)
-    # script_model = torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
-    #     compiled_model
-    # )
     # save_path = Path("model-store")
     # save_path.mkdir(exist_ok=True)
-    # torch.jit.save(  # pyright: ignore [reportPrivateImportUsage]
-    #     script_model, save_path / "model.pt"
-    # )
+    # compiled_model.to_torchscript(save_path / "model.pt")
 
 
 if __name__ == "__main__":

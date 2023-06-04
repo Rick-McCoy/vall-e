@@ -16,6 +16,7 @@ from model.autoregressive import AutoRegressive
 from model.loss import VallELoss
 from model.nonautoregressive import NonAutoRegressive
 from utils.data import plot_mel_spectrogram
+from utils.model import nucleus_sample
 from utils.utils import unpad_sequence
 
 
@@ -263,10 +264,11 @@ class VallE(LightningModule):
                 torch.cat([enrolled_audio[:, 0], audio], dim=-1),
                 concat_text_len,
                 enrolled_audio_len + audio_len,
-            )[:, -1:].argmax(dim=-1)
-            if ar_output >= self.codec_eos[:, 0]:
+            )[0, -1]
+            sample_token = nucleus_sample(ar_output, 0.9).unsqueeze(0)
+            if sample_token == self.codec_eos[:, 0]:
                 break
-            audio = torch.cat([audio, ar_output], dim=-1)
+            audio = torch.cat([audio, sample_token], dim=-1)
             audio_len += 1
 
         audio = audio.unsqueeze(1)

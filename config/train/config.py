@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -8,6 +9,7 @@ class TrainConfig:
     auto_batch: bool = False
     batch_size: int = 64
     checkpoint: bool = True
+    checkpoint_path: Optional[str] = None
     early_stop: bool = True
     fast_dev_run: bool = False
     lr: float = 5e-4
