@@ -7,6 +7,7 @@ from lightning import LightningModule
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
+from tqdm import tqdm
 
 from config.config import Config
 from data.audio import codec_to_audio, mel_spectrogram
@@ -34,7 +35,7 @@ class VallE(LightningModule):
             "text_eos", torch.tensor([CHAR_TO_CODE["<EOS>"]], dtype=torch.long)
         )
         self.text_eos: torch.Tensor
-        self.text_pad = CHAR_TO_CODE["<PAD>"]
+        self.text_pad = float(CHAR_TO_CODE["<PAD>"])
         self.register_buffer(
             "codec_eos",
             torch.full(
@@ -42,7 +43,7 @@ class VallE(LightningModule):
             ),
         )
         self.codec_eos: torch.Tensor
-        self.codec_pad = 2**cfg.data.codec_bits + 1
+        self.codec_pad = float(2**cfg.data.codec_bits + 1)
         self.lr = cfg.train.lr
         self.autoregressive = AutoRegressive(cfg)
         self.nonautoregressive = NonAutoRegressive(cfg)
@@ -58,14 +59,16 @@ class VallE(LightningModule):
             ignore_index=2**cfg.data.codec_bits + 1,
         )
         self.example_input_array = (
-            torch.randint(0, VOCAB_SIZE, (1, 50)).long(),
-            torch.randint(0, VOCAB_SIZE, (1, 30)).long(),
+            torch.randint(0, VOCAB_SIZE, (2, 50)).long(),
             torch.randint(
-                0, 2**cfg.data.codec_bits, (1, cfg.data.codec_channels, 200)
+                0, 2**cfg.data.codec_bits, (2, cfg.data.codec_channels, 300)
             ).long(),
-            torch.tensor([50]),
-            torch.tensor([30]),
-            torch.tensor([200]),
+            torch.randint(
+                0, 2**cfg.data.codec_bits, (2, cfg.data.codec_channels, 200)
+            ).long(),
+            torch.tensor([50, 30]),
+            torch.tensor([250, 300]),
+            torch.tensor([200, 200]),
         )
         self.register_buffer(
             "gen_text",
@@ -93,7 +96,7 @@ class VallE(LightningModule):
         text_list = [torch.cat([t, self.text_eos]) for t in text_list]
         text_len = text_len + 1
         text = torch.nn.utils.rnn.pad_sequence(
-            text_list, batch_first=True, padding_value=float(self.text_pad)
+            text_list, batch_first=True, padding_value=self.text_pad
         )
         return text, text_len
 
@@ -102,7 +105,7 @@ class VallE(LightningModule):
         codec_list = [torch.cat([t, self.codec_eos]) for t in codec_list]
         codec_len = codec_len + 1
         codec = torch.nn.utils.rnn.pad_sequence(
-            codec_list, batch_first=True, padding_value=float(self.codec_pad)
+            codec_list, batch_first=True, padding_value=self.codec_pad
         )
         return codec.transpose(1, 2), codec_len
 
@@ -111,7 +114,7 @@ class VallE(LightningModule):
         codec_list = [t[:-1] for t in codec_list]
         codec_len = codec_len - 1
         codec = torch.nn.utils.rnn.pad_sequence(
-            codec_list, batch_first=True, padding_value=float(self.codec_pad)
+            codec_list, batch_first=True, padding_value=self.codec_pad
         )
         return codec, codec_len
 
@@ -135,7 +138,7 @@ class VallE(LightningModule):
         audio_slice = torch.nn.utils.rnn.pad_sequence(
             audio_slice_list,
             batch_first=True,
-            padding_value=float(self.codec_pad),
+            padding_value=self.codec_pad,
         ).transpose(1, 2)
         audio_slice_len = torch.tensor(audio_slice_len_list).long().to(audio.device)
         return audio_slice, audio_slice_len
@@ -157,7 +160,7 @@ class VallE(LightningModule):
                 ar_output_item[text_len_item - 1 : text_len_item + audio_len_item]
             )
         return torch.nn.utils.rnn.pad_sequence(
-            ar_output_list, batch_first=True, padding_value=float(self.codec_pad)
+            ar_output_list, batch_first=True, padding_value=self.codec_pad
         )
 
     def nar_forward(
@@ -200,10 +203,10 @@ class VallE(LightningModule):
                 ]
             )
         return torch.nn.utils.rnn.pad_sequence(
-            nar_output_list, batch_first=True, padding_value=float(self.codec_pad)
+            nar_output_list, batch_first=True, padding_value=self.codec_pad
         )
 
-    def all_forward(
+    def forward(
         self,
         text: torch.Tensor,
         audio: torch.Tensor,
@@ -231,7 +234,7 @@ class VallE(LightningModule):
 
         return torch.stack(output_list, dim=1)
 
-    def forward(
+    def inference(
         self,
         text: torch.Tensor,
         enrolled_text: torch.Tensor,
@@ -253,12 +256,12 @@ class VallE(LightningModule):
                 )
             ],
             batch_first=True,
-            padding_value=float(self.text_pad),
+            padding_value=self.text_pad,
         )
         concat_text_len = text_len + enrolled_text_len + 1
         audio = torch.empty_like(enrolled_audio)[:, 0, :0]
         audio_len = torch.zeros_like(enrolled_audio_len)
-        for _ in range(self.max_infer_len):
+        for _ in tqdm(range(self.max_infer_len)):
             ar_output = self.autoregressive(
                 concat_text,
                 torch.cat([enrolled_audio[:, 0], audio], dim=-1),
@@ -280,7 +283,7 @@ class VallE(LightningModule):
                 text_len,
                 audio_len,
                 enrolled_audio_len,
-            )[..., : self.codec_pad - 1].argmax(dim=-1)
+            )[..., :-1].argmax(dim=-1)
             audio = torch.cat([audio, nar_audio.unsqueeze(1)], dim=1)
 
         return audio
@@ -326,7 +329,7 @@ class VallE(LightningModule):
             self.log(f"{mode}/nar_acc", self.nar_acc, on_epoch=True, sync_dist=True)
         return total_loss
 
-    def training_step(self, batch: CollatedBatch) -> torch.Tensor:
+    def training_step(self, batch: CollatedBatch, batch_idx: int) -> torch.Tensor:
         loss = self.single_step(batch, "train")
         if self.device.index == 0:
             scheduler = self.lr_schedulers()
@@ -393,15 +396,15 @@ class VallE(LightningModule):
             [longest_audio_index], :longest_enrolled_audio_len
         ]
         with torch.no_grad():
-            pred = self.all_forward(
+            pred = self(
                 longest_text,
                 longest_audio,
                 longest_enrolled_audio,
                 longest_text_len,
                 longest_audio_len,
                 longest_enrolled_audio_len,
-            )[..., : self.codec_pad - 1].argmax(dim=-1)
-            gen: torch.Tensor = self(
+            )[..., :-1].argmax(dim=-1)
+            gen: torch.Tensor = self.inference(
                 text=self.gen_text,
                 enrolled_text=longest_text,
                 enrolled_audio=longest_audio,
@@ -410,6 +413,7 @@ class VallE(LightningModule):
                 enrolled_audio_len=longest_audio_len,
             )
         if gen.shape[2] < 30:
+            tqdm.write(f"Warning: Generated audio is too short, {gen.shape[2]} < 30")
             codec_list = [longest_audio, pred]
         else:
             codec_list = [longest_audio, pred, gen]
