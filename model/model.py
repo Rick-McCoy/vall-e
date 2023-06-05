@@ -403,7 +403,7 @@ class VallE(LightningModule):
                 longest_text_len,
                 longest_audio_len,
                 longest_enrolled_audio_len,
-            )[..., :-1].argmax(dim=-1)
+            )[..., :-2].argmax(dim=-1)
             gen: torch.Tensor = self.inference(
                 text=self.gen_text,
                 enrolled_text=longest_text,
