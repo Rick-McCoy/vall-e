@@ -3,9 +3,9 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from config.config import Config
-from data.text import CHAR_TO_CODE, VOCAB_SIZE
 from model.positional_encoding import PositionalEncoding
 from model.transformer import TransformerEncoder, TransformerEncoderLayer
+from utils.text import CHAR_TO_CODE, VOCAB_SIZE
 
 
 class NonAutoRegressive(nn.Module):

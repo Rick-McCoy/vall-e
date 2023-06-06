@@ -6,9 +6,9 @@ import numpy as np
 from torch.utils.data import Dataset
 
 from config.config import Config
-from data.audio import load_codec
-from data.text import encode_text
+from utils.audio import load_codec
 from utils.data import load_metadata
+from utils.text import encode_text
 
 
 @dataclass

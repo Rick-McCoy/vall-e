@@ -7,7 +7,6 @@ import hydra
 import numpy as np
 import pandas as pd
 import torch
-from encodec.model import EncodecModel
 from hydra.core.config_store import ConfigStore
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -16,7 +15,8 @@ from config.config import Config
 from config.data.config import DataConfig
 from config.model.config import ModelConfig
 from config.train.config import TrainConfig
-from data.audio import audio_to_codec, load_audio
+from encodec.model import EncodecModel
+from utils.audio import audio_to_codec, load_audio, trim_audio
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=Config)
@@ -69,9 +69,10 @@ class PreprocessDataset(Dataset):
                 wav_path, self.cfg.data.sample_rate, self.cfg.data.audio_channels
             )
         )
+        trimmed_audio = trim_audio(audio, self.cfg.data.sample_rate)
         codec_path = Path(str(wav_path).replace("source", "codec")).with_suffix(".npy")
         return (
-            audio,
+            trimmed_audio,
             codec_path,
             text,
             "_".join(

@@ -4,6 +4,7 @@ from typing import Literal, Optional, cast
 import numpy as np
 import soundfile as sf
 import torch
+import torchaudio
 from torchaudio.transforms import MelSpectrogram, Resample
 
 from encodec.model import EncodecModel, EncodedFrame
@@ -129,6 +130,23 @@ def codec_to_audio(
             if isinstance(module, SLSTM):
                 module.lstm.flatten_parameters()
         return encodec_model.decode(frames)
+
+
+def trim_audio(audio: torch.Tensor, sr: int) -> torch.Tensor:
+    """Trims silence from the beginning and end of an audio tensor.
+
+    Args:
+        audio (torch.Tensor): Audio
+
+    Returns:
+        audio (torch.Tensor): Trimmed audio
+    """
+    with torch.no_grad():
+        trim_front_audio = torchaudio.functional.vad(audio, sr)
+        trim_back_audio = torchaudio.functional.vad(
+            trim_front_audio.flip(dims=[-1]), sr
+        ).flip(dims=[-1])
+        return trim_back_audio
 
 
 def mel_spectrogram(

@@ -10,7 +10,7 @@ from torch.utils.data.dataloader import DataLoader
 
 from config.config import Config
 from data.dataset import Batch, VallEDataset
-from data.text import CHAR_TO_CODE
+from utils.text import CHAR_TO_CODE
 
 
 @dataclass

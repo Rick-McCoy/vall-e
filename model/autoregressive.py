@@ -2,9 +2,9 @@ import torch
 from torch import Tensor, nn
 
 from config.config import Config
-from data.text import CHAR_TO_CODE, VOCAB_SIZE
 from model.positional_encoding import PositionalEncoding
 from model.transformer import TransformerEncoder, TransformerEncoderLayer
+from utils.text import CHAR_TO_CODE, VOCAB_SIZE
 
 
 class AutoRegressive(nn.Module):

@@ -10,14 +10,14 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from config.config import Config
-from data.audio import codec_to_audio, mel_spectrogram
 from data.datamodule import CollatedBatch
-from data.text import CHAR_TO_CODE, VOCAB_SIZE, encode_text
 from model.autoregressive import AutoRegressive
 from model.loss import VallELoss
 from model.nonautoregressive import NonAutoRegressive
+from utils.audio import codec_to_audio, mel_spectrogram
 from utils.data import plot_mel_spectrogram
 from utils.model import nucleus_sample
+from utils.text import CHAR_TO_CODE, VOCAB_SIZE, encode_text
 from utils.utils import unpad_sequence
 
 
