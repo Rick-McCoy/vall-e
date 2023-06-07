@@ -16,7 +16,7 @@ from config.data.config import DataConfig
 from config.model.config import ModelConfig
 from config.train.config import TrainConfig
 from encodec.model import EncodecModel
-from utils.audio import audio_to_codec, load_audio, trim_audio
+from utils.audio import audio_to_codec, load_audio
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=Config)
@@ -61,6 +61,10 @@ class PreprocessDataset(Dataset):
             speech_style = contents["화자정보"]["SpeechStyle"]
             character = contents["화자정보"]["Character"]
             character_emotion = contents["화자정보"]["CharacterEmotion"]
+            begin_time = (
+                float(contents["기타정보"]["SpeechStart"]) * self.cfg.data.sample_rate
+            )
+            end_time = contents["기타정보"]["SpeechEnd"] * self.cfg.data.sample_rate
         if not wav_path.exists():
             print(f"Audio file {wav_path} does not exist")
             return None
@@ -69,7 +73,7 @@ class PreprocessDataset(Dataset):
                 wav_path, self.cfg.data.sample_rate, self.cfg.data.audio_channels
             )
         )
-        trimmed_audio = trim_audio(audio, self.cfg.data.sample_rate)
+        trimmed_audio = audio[:, begin_time:end_time]
         codec_path = Path(str(wav_path).replace("source", "codec")).with_suffix(".npy")
         return (
             trimmed_audio,
