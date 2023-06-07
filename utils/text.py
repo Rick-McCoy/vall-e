@@ -93,6 +93,23 @@ def normalize_space(text: str) -> str:
     return text
 
 
+def remove_artifacts(text: str) -> str:
+    """Removes artifacts from text.
+    The list of artifacts to be removed is as follows:
+
+    Excel bugs:
+    - '_x000D_': Excel line break
+
+    Args:
+        text (str): Text to remove artifacts from.
+
+    Returns:
+        str: Text without artifacts."""
+
+    text = text.replace("_x000D_", "")
+    return text
+
+
 def encode_text(text: str) -> np.ndarray:
     """Converts text into corresponding integer values.
     Handles Hangul & ASCII characters.
@@ -105,6 +122,7 @@ def encode_text(text: str) -> np.ndarray:
         np.ndarray: Shape: (N,)"""
 
     code = []
+    text = remove_artifacts(text)
     text = normalize_space(text)
     text = g2p(text)
     for char in split_hangul_jamo(text):
