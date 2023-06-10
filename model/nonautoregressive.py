@@ -109,7 +109,7 @@ class NonAutoRegressive(nn.Module):
             )
 
         embed = torch.nn.utils.rnn.pad_sequence(embed_list, batch_first=True)
-        total_len = text_len_batch + audio_len_batch + enrolled_audio_len_batch + 1
+        total_len = text_len_batch + audio_len_batch + enrolled_audio_len_batch
         padding_mask = torch.arange(embed.shape[1], device=embed.device).unsqueeze(
             0
         ) >= total_len.unsqueeze(1)

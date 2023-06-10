@@ -20,7 +20,13 @@ class TransformerEncoder(nn.TransformerEncoder):
 
         for mod in self.layers:
             output = torch.utils.checkpoint.checkpoint(
-                mod, output, layer, mask, src_key_padding_mask, is_causal
+                mod,
+                use_reentrant=False,
+                src=output,
+                layer=layer,
+                src_mask=mask,
+                src_key_padding_mask=src_key_padding_mask,
+                is_causal=is_causal,
             )
             assert output is not None
 

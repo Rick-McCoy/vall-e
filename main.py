@@ -20,7 +20,7 @@ from config.data.config import DataConfig
 from config.model.config import ModelConfig
 from config.train.config import TrainConfig
 from data.datamodule import VallEDataModule
-from model.model import VallE
+from model.valle import VallE
 
 # from utils.model import remove_weight_norm
 
