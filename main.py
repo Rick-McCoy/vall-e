@@ -20,7 +20,7 @@ from config.data.config import DataConfig
 from config.model.config import ModelConfig
 from config.train.config import TrainConfig
 from data.datamodule import VallEDataModule
-from model.valle import VallE
+from model.musicgen import MusicGen
 
 # from utils.model import remove_weight_norm
 
@@ -33,8 +33,8 @@ cs.store(group="model", name="base_model", node=ModelConfig)
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: Config):
-    model = VallE(cfg)
-    compiled_model = cast(VallE, torch.compile(model, disable=True))
+    model = MusicGen(cfg)
+    compiled_model = cast(MusicGen, torch.compile(model, disable=True))
     datamodule = VallEDataModule(cfg)
 
     Path("logs").mkdir(exist_ok=True)
