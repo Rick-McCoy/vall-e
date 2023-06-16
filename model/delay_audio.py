@@ -6,6 +6,59 @@ from utils.utils import unpad_sequence
 
 
 class DelayAudio(nn.Module):
+    """Delays audio codecs across codec channels.
+
+    Delaying is performed by appending SOS & EOS tokens to the beginning and end of
+    each audio codec channel. The number of tokens appended is equal to the number of
+    codec channels.
+    Then, each channel is shifted by its channel index. For example, the first channel
+    is shifted by 0, the second channel is shifted by 1, and so on.
+    Finally, the audio length is increased by the number of codec channels.
+
+    Example:
+        >>> cfg.data.codec_channels = 4
+        >>> delay_audio = DelayAudio(cfg)
+        >>> a = torch.zeros((2, 4, 3), dtype=torch.long)
+        >>> length = torch.tensor([1, 3])
+        >>> non_target, non_target_length = delay_audio(a, length, False)
+        >>> print(non_target)
+        tensor([[[1024,    0, 1025, 1025, 1025, 1026, 1026],
+                [1024, 1024,    0, 1025, 1025, 1026, 1026],
+                [1024, 1024, 1024,    0, 1025, 1026, 1026],
+                [1024, 1024, 1024, 1024,    0, 1026, 1026],
+                [[1024,    0,    0,    0, 1025, 1025, 1025],
+                [1024, 1024,    0,    0,    0, 1025, 1025],
+                [1024, 1024, 1024,    0,    0,    0, 1025],
+                [1024, 1024, 1024, 1024,    0,    0,    0]]])
+        >>> print(non_target_length)
+        tensor([5, 7])
+        >>> target, target_length = delay_audio(a, length, True)
+        >>> print(target)
+        tensor([[[   0, 1025, 1025, 1025, 1025, 1026, 1026],
+                [1024,    0, 1025, 1025, 1025, 1026, 1026],
+                [1024, 1024,    0, 1025, 1025, 1026, 1026],
+                [1024, 1024, 1024,    0, 1025, 1026, 1026],
+                [[   0,    0,    0, 1025, 1025, 1025, 1025],
+                [1024,    0,    0,    0, 1025, 1025, 1025],
+                [1024, 1024,    0,    0,    0, 1025, 1025],
+                [1024, 1024, 1024,    0,    0,    0, 1025]]])
+        >>> print(target_length)
+        tensor([5, 7])
+        >>> original, original_length = delay_audio.remove_delay(target, target_length)
+        >>> print(original)
+        tensor([[[   0, 1026, 1026],
+                [   0, 1026, 1026],
+                [   0, 1026, 1026],
+                [   0, 1026, 1026],
+                [[   0,    0,    0],
+                [   0,    0,    0],
+                [   0,    0,    0],
+                [   0,    0,    0]]])
+        >>> print(original_length)
+        tensor([1, 3])
+
+    """
+
     def __init__(self, cfg: Config):
         super().__init__()
         self.n_channels = cfg.data.codec_channels

@@ -26,15 +26,8 @@ class MusicGen(LightningModule):
         super().__init__()
         self.save_hyperparameters(cfg)
         self.cfg = cfg
-        self.enrolled_audio_length = (
-            cfg.data.enrolled_audio_length * cfg.data.codec_rate
-        )
         self.codec_channels = cfg.data.codec_channels
         self.sample_rate = cfg.data.sample_rate
-        self.register_buffer(
-            "text_eos", torch.tensor([CHAR_TO_CODE["<EOS>"]], dtype=torch.long)
-        )
-        self.text_eos: torch.Tensor
         self.text_pad = float(CHAR_TO_CODE["<PAD>"])
         self.register_buffer(
             "codec_eos",
@@ -45,7 +38,6 @@ class MusicGen(LightningModule):
             ),
         )
         self.codec_eos: torch.Tensor
-        self.codec_pad = float(2**cfg.data.codec_bits + 1)
         self.lr = cfg.train.lr
         self.delay_audio = DelayAudio(cfg)
         self.delayed_transformer = DelayedTransformer(cfg=cfg)
