@@ -20,7 +20,7 @@ class TrainConfig:
     warmup_steps: int = 32000
     max_steps: int = 800000
     precision: str = "32"
-    project: str = "vall-e"
+    project: str = "musigen"
     wandb: bool = True
 
     def __post_init__(self):

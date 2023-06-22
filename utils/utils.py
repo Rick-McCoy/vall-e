@@ -32,6 +32,9 @@ def unpad_sequence(
     Returns:
         list[torch.Tensor]: List of unpadded Tensors
     """
+
+    assert padded_sequences.shape[0] == lengths.shape[0]
+    assert padded_sequences.shape[1] == lengths.max()
     unpadded_sequences = []
 
     if not batch_first:

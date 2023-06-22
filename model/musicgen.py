@@ -40,7 +40,7 @@ class MusicGen(LightningModule):
         self.codec_eos: torch.Tensor
         self.lr = cfg.train.lr
         self.delay_audio = DelayAudio(cfg)
-        self.delayed_transformer = DelayedTransformer(cfg=cfg)
+        self.delayed_transformer = DelayedTransformer(cfg)
         self.loss = nn.CrossEntropyLoss(ignore_index=2**cfg.data.codec_bits + 1)
         self.acc = MulticlassAccuracy(
             num_classes=2**cfg.data.codec_bits + 3,
@@ -217,7 +217,7 @@ class MusicGen(LightningModule):
                     longest_text_len,
                     longest_audio_len,
                 ).argmax(dim=-1),
-                longest_audio_len,
+                longest_audio_len + self.codec_channels,
             )
             pred = pred.clamp_max(2**self.cfg.data.codec_bits - 1)
             gen: torch.Tensor = self.inference(
