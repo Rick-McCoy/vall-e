@@ -81,10 +81,7 @@ class MusicGen(LightningModule):
         text_len: torch.Tensor,
         audio_len: torch.Tensor,
     ) -> torch.Tensor:
-        delayed_audio, delayed_audio_len = self.delay_audio(audio, audio_len, False)
-        return self.delayed_transformer(
-            text, delayed_audio, text_len, delayed_audio_len
-        )
+        return self.delayed_transformer(text, audio, text_len, audio_len)
 
     def inference(
         self,
@@ -142,8 +139,9 @@ class MusicGen(LightningModule):
         self, batch: CollatedBatch, mode: Literal["train", "val", "test"]
     ) -> torch.Tensor:
         (text, text_len, audio, audio_len) = self.parse_batch(batch)
-        output = self(text, audio, text_len, audio_len)
-        target_audio, target_audio_len = self.delay_audio(audio, audio_len, True)
+        delayed_audio, delayed_audio_len = self.delay_audio(audio, audio_len, False)
+        output = self(text, delayed_audio, text_len, delayed_audio_len)
+        target_audio, _ = self.delay_audio(audio, audio_len, True)
         loss = self.loss(output.permute(0, 3, 1, 2), target_audio)
         self.acc(output.permute(0, 3, 1, 2), target_audio)
         if mode == "train":
@@ -210,14 +208,17 @@ class MusicGen(LightningModule):
         longest_text_len = text_len[[longest_audio_index]]
         longest_text = text[[longest_audio_index], :longest_text_len]
         with torch.no_grad():
+            delayed_longest_audio, delayed_longest_audio_len = self.delay_audio(
+                longest_audio, longest_audio_len
+            )
             pred, _ = self.delay_audio.remove_delay(
                 self(
                     longest_text,
-                    longest_audio,
+                    delayed_longest_audio,
                     longest_text_len,
-                    longest_audio_len,
+                    delayed_longest_audio_len,
                 ).argmax(dim=-1),
-                longest_audio_len + self.codec_channels,
+                delayed_longest_audio_len,
             )
             pred = pred.clamp_max(2**self.cfg.data.codec_bits - 1)
             gen: torch.Tensor = self.inference(
