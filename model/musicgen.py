@@ -30,6 +30,15 @@ class MusicGen(LightningModule):
         self.sample_rate = cfg.data.sample_rate
         self.text_pad = float(CHAR_TO_CODE["<PAD>"])
         self.register_buffer(
+            "text_space",
+            torch.full(
+                (1,),
+                CHAR_TO_CODE[" "],
+                dtype=torch.long,
+            ),
+        )
+        self.text_space: torch.Tensor
+        self.register_buffer(
             "codec_eos",
             torch.full(
                 (1, cfg.data.codec_channels, 1),
@@ -99,7 +108,7 @@ class MusicGen(LightningModule):
         )
         concat_text = torch.nn.utils.rnn.pad_sequence(
             [
-                torch.cat([unpad_enrolled_text_item, unpad_text_item])
+                torch.cat([unpad_enrolled_text_item, self.text_space, unpad_text_item])
                 for unpad_text_item, unpad_enrolled_text_item in zip(
                     unpad_text, unpad_enrolled_text
                 )
@@ -107,7 +116,7 @@ class MusicGen(LightningModule):
             batch_first=True,
             padding_value=self.text_pad,
         )
-        concat_text_len = text_len + enrolled_text_len
+        concat_text_len = text_len + 1 + enrolled_text_len
         audio = torch.empty_like(enrolled_audio)[:, :, :0]
         audio_len = torch.zeros_like(enrolled_audio_len)
         delayed_enrolled_audio, delayed_enrolled_audio_len = self.delay_audio(
