@@ -1,13 +1,14 @@
 import json
 from math import ceil
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Iterable, Literal, Optional
 
 import hydra
 import numpy as np
 import pandas as pd
 import torch
 from hydra.core.config_store import ConfigStore
+from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
@@ -16,7 +17,7 @@ from config.data.config import DataConfig
 from config.model.config import ModelConfig
 from config.train.config import TrainConfig
 from encodec.model import EncodecModel
-from utils.audio import audio_to_codec, load_audio
+from utils.audio import audio_to_codec, load_audio, write_codec
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=Config)
@@ -49,7 +50,7 @@ class PreprocessDataset(Dataset):
         wav_path = Path(str(json_path).replace("label", "source")).with_suffix(".wav")
         with open(json_path, "r") as f:
             try:
-                contents = json.load(f)
+                contents: dict[str, dict[str, str]] = json.load(f)
             except Exception as e:
                 print(f"Error occured while loading {json_path}")
                 print(e)
@@ -94,7 +95,7 @@ class PreprocessDataset(Dataset):
         )
 
 
-def collate_fn(batch: list[Optional[tuple[torch.Tensor, Path, str, str]]]):
+def collate_fn(batch: list[Optional[tuple[Tensor, Path, str, str]]]):
     filtered_batch = [x for x in batch if x is not None]
     return (
         torch.nn.utils.rnn.pad_sequence(
@@ -122,7 +123,9 @@ def preprocess(
     compression_factor = cfg.data.sample_rate // cfg.data.codec_rate
 
     metadata_list = []
-    tqdm_dataloader = tqdm(dataloader)
+    tqdm_dataloader: Iterable[
+        tuple[Tensor, list[int], list[Path], list[str], list[str]]
+    ] = tqdm(dataloader)
     for batch in tqdm_dataloader:
         audio_batch, audio_len_batch, codec_path_list, text_list, speaker_list = batch
         codec_batch = (
@@ -138,7 +141,7 @@ def preprocess(
             codec_len = ceil(audio_len / compression_factor)
             codec = codec[:, :codec_len]
             codec_path.parent.mkdir(exist_ok=True, parents=True)
-            np.save(codec_path, codec)
+            write_codec(codec_path, codec)
             relative_path = codec_path.relative_to(cfg.data.path / mode / "codec")
             metadata_list.append((speaker, text, relative_path))
 

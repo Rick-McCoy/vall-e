@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from functools import partial
 from typing import Optional
 
@@ -9,21 +8,12 @@ from torch.utils.data import random_split
 from torch.utils.data.dataloader import DataLoader
 
 from config.config import Config
-from data.dataset import Batch, VallEDataset
+from data.dataset import VallEDataset
 from utils.text import CHAR_TO_CODE
+from utils.types import Batch, CollatedBatch
 
 
-@dataclass
-class CollatedBatch:
-    text: torch.Tensor
-    text_len: torch.Tensor
-    audio: torch.Tensor
-    audio_len: torch.Tensor
-    enrolled_audio: torch.Tensor
-    enrolled_audio_len: torch.Tensor
-
-
-def collate_fn(batches: list[Batch], codec_pad: int) -> CollatedBatch:
+def collate_fn(batches: list[Batch], codec_pad: int):
     text_len = [batch.text.shape[0] for batch in batches]
     audio_len = [batch.audio.shape[1] for batch in batches]
     enrolled_audio_len = [batch.enrolled_audio.shape[1] for batch in batches]

@@ -1,5 +1,4 @@
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -9,13 +8,7 @@ from config.config import Config
 from utils.audio import load_codec
 from utils.data import load_metadata
 from utils.text import encode_text
-
-
-@dataclass
-class Batch:
-    text: np.ndarray
-    audio: np.ndarray
-    enrolled_audio: np.ndarray
+from utils.types import Batch
 
 
 class VallEDataset(Dataset):

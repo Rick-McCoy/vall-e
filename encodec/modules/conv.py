@@ -7,30 +7,29 @@
 """Convolutional layers wrappers and utilities."""
 
 import math
-import typing as tp
 import warnings
+from typing import Any, TypeVar
 
-import torch
-from torch import nn
+from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.nn.utils.spectral_norm import spectral_norm
 from torch.nn.utils.weight_norm import weight_norm
 
 from encodec.modules.norm import ConvLayerNorm
 
-CONV_NORMALIZATIONS = frozenset(
-    [
-        "none",
-        "weight_norm",
-        "spectral_norm",
-        "time_layer_norm",
-        "layer_norm",
-        "time_group_norm",
-    ]
+CONV_NORMALIZATIONS = (
+    "none",
+    "weight_norm",
+    "spectral_norm",
+    "time_layer_norm",
+    "layer_norm",
+    "time_group_norm",
 )
 
+M = TypeVar("M", bound=nn.Module)
 
-def apply_parametrization_norm(module: nn.Module, norm: str = "none") -> nn.Module:
+
+def apply_parametrization_norm(module: M, norm: str = "none") -> M:
     assert norm in CONV_NORMALIZATIONS
     if norm == "weight_norm":
         return weight_norm(module)
@@ -44,7 +43,7 @@ def apply_parametrization_norm(module: nn.Module, norm: str = "none") -> nn.Modu
 
 def get_norm_module(
     module: nn.Module, causal: bool = False, norm: str = "none", **norm_kwargs
-) -> nn.Module:
+):
     """Return the proper normalization module. If causal is True, this will ensure the returned
     module is causal, or return an error if the normalization doesn't support causal evaluation.
     """
@@ -62,7 +61,7 @@ def get_norm_module(
 
 
 def get_extra_padding_for_conv1d(
-    x: torch.Tensor, kernel_size: int, stride: int, padding_total: int = 0
+    x: Tensor, kernel_size: int, stride: int, padding_total: int = 0
 ) -> int:
     """See `pad_for_conv1d`."""
     length = x.shape[-1]
@@ -71,12 +70,7 @@ def get_extra_padding_for_conv1d(
     return ideal_length - length
 
 
-def pad1d(
-    x: torch.Tensor,
-    paddings: tp.Tuple[int, int],
-    mode: str = "zero",
-    value: float = 0.0,
-):
+def pad1d(x: Tensor, paddings: tuple[int, int], mode: str = "zero", value: float = 0.0):
     """Tiny wrapper around F.pad, just to allow for reflect padding on small input.
     If this is the case, we insert extra 0 padding to the right before the reflection happen.
     """
@@ -96,7 +90,7 @@ def pad1d(
         return F.pad(x, paddings, mode, value)
 
 
-def unpad1d(x: torch.Tensor, paddings: tp.Tuple[int, int]):
+def unpad1d(x: Tensor, paddings: tuple[int, int]):
     """Remove padding from x, handling properly zero padding. Only for 1d!"""
     padding_left, padding_right = paddings
     assert padding_left >= 0 and padding_right >= 0, (padding_left, padding_right)
@@ -115,13 +109,12 @@ class NormConv1d(nn.Module):
         *args,
         causal: bool = False,
         norm: str = "none",
-        norm_kwargs: tp.Dict[str, tp.Any] = {},
+        norm_kwargs: dict[str, Any] = {},
         **kwargs,
     ):
         super().__init__()
         self.conv = apply_parametrization_norm(nn.Conv1d(*args, **kwargs), norm)
         self.norm = get_norm_module(self.conv, causal, norm, **norm_kwargs)
-        self.norm_type = norm
 
     def forward(self, x):
         x = self.conv(x)
@@ -139,7 +132,7 @@ class NormConvTranspose1d(nn.Module):
         *args,
         causal: bool = False,
         norm: str = "none",
-        norm_kwargs: tp.Dict[str, tp.Any] = {},
+        norm_kwargs: dict[str, Any] = {},
         **kwargs,
     ):
         super().__init__()
@@ -147,7 +140,6 @@ class NormConvTranspose1d(nn.Module):
             nn.ConvTranspose1d(*args, **kwargs), norm
         )
         self.norm = get_norm_module(self.convtr, causal, norm, **norm_kwargs)
-        self.norm_type = norm
 
     def forward(self, x):
         x = self.convtr(x)
@@ -171,7 +163,7 @@ class SConv1d(nn.Module):
         bias: bool = True,
         causal: bool = False,
         norm: str = "none",
-        norm_kwargs: tp.Dict[str, tp.Any] = {},
+        norm_kwargs: dict[str, Any] = {},
         pad_mode: str = "reflect",
     ):
         super().__init__()
@@ -234,7 +226,7 @@ class SConvTranspose1d(nn.Module):
         causal: bool = False,
         norm: str = "none",
         trim_right_ratio: float = 1.0,
-        norm_kwargs: tp.Dict[str, tp.Any] = {},
+        norm_kwargs: dict[str, Any] = {},
     ):
         super().__init__()
         self.convtr = NormConvTranspose1d(

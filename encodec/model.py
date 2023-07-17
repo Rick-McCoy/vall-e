@@ -7,20 +7,18 @@
 """EnCodec model implementation."""
 
 import math
-import typing as tp
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
-from torch import nn
+from torch import Tensor, nn
 
 from encodec.modules.seanet import SEANetDecoder, SEANetEncoder
 from encodec.quantization.vq import ResidualVectorQuantizer
 from encodec.utils import _check_checksum, _get_checkpoint_url, _linear_overlap_add
 
 ROOT_URL = "https://dl.fbaipublicfiles.com/encodec/v0/"
-
-EncodedFrame = tp.Tuple[torch.Tensor, tp.Optional[torch.Tensor]]
 
 
 class EncodecModel(nn.Module):
@@ -42,16 +40,16 @@ class EncodecModel(nn.Module):
         encoder: SEANetEncoder,
         decoder: SEANetDecoder,
         quantizer: ResidualVectorQuantizer,
-        target_bandwidths: tp.List[float],
+        target_bandwidths: list[float],
         sample_rate: int,
         channels: int,
         normalize: bool = False,
-        segment: tp.Optional[float] = None,
+        segment: Optional[float] = None,
         overlap: float = 0.01,
         name: str = "unset",
     ):
         super().__init__()
-        self.bandwidth: tp.Optional[float] = None
+        self.bandwidth: Optional[float] = None
         self.target_bandwidths = target_bandwidths
         self.encoder = encoder
         self.quantizer = quantizer
@@ -69,19 +67,19 @@ class EncodecModel(nn.Module):
         ), "quantizer bins must be a power of 2."
 
     @property
-    def segment_length(self) -> tp.Optional[int]:
+    def segment_length(self) -> Optional[int]:
         if self.segment is None:
             return None
         return int(self.segment * self.sample_rate)
 
     @property
-    def segment_stride(self) -> tp.Optional[int]:
+    def segment_stride(self) -> Optional[int]:
         segment_length = self.segment_length
         if segment_length is None:
             return None
         return max(1, int((1 - self.overlap) * segment_length))
 
-    def encode(self, x: torch.Tensor) -> tp.List[EncodedFrame]:
+    def encode(self, x: Tensor):
         """Given a tensor `x`, returns a list of frames containing
         the discrete encoded codes for `x`, along with rescaling factors
         for each segment, when `self.normalize` is True.
@@ -100,13 +98,13 @@ class EncodecModel(nn.Module):
             stride = self.segment_stride  # type: ignore
             assert stride is not None
 
-        encoded_frames: tp.List[EncodedFrame] = []
-        for offset in range(0, length, stride):
-            frame = x[:, :, offset : offset + segment_length]
-            encoded_frames.append(self._encode_frame(frame))
+        encoded_frames = [
+            self._encode_frame(x[:, :, offset : offset + segment_length])
+            for offset in range(0, length, stride)
+        ]
         return encoded_frames
 
-    def _encode_frame(self, x: torch.Tensor) -> EncodedFrame:
+    def _encode_frame(self, x: Tensor) -> tuple[Tensor, Optional[Tensor]]:
         length = x.shape[-1]
         duration = length / self.sample_rate
         segment = self.segment
@@ -129,7 +127,7 @@ class EncodecModel(nn.Module):
         # codes is [B, K, T], with T frames, K nb of codebooks.
         return codes, scale
 
-    def decode(self, encoded_frames: tp.List[EncodedFrame]) -> torch.Tensor:
+    def decode(self, encoded_frames: list[tuple[Tensor, Optional[Tensor]]]) -> Tensor:
         """Decode the given frames into a waveform.
         Note that the output might be a bit bigger than the input. In that case,
         any extra steps at the end can be trimmed.
@@ -145,7 +143,7 @@ class EncodecModel(nn.Module):
             frames, segment_stride if segment_stride is not None else 1
         )
 
-    def _decode_frame(self, encoded_frame: EncodedFrame) -> torch.Tensor:
+    def _decode_frame(self, encoded_frame: tuple[Tensor, Optional[Tensor]]) -> Tensor:
         codes, scale = encoded_frame
         codes = codes.transpose(0, 1)
         emb = self.quantizer.decode(codes)
@@ -154,7 +152,7 @@ class EncodecModel(nn.Module):
             out = out * scale.view(-1, 1, 1)
         return out
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         frames = self.encode(x)
         return self.decode(frames)[:, :, : x.shape[-1]]
 
@@ -168,13 +166,13 @@ class EncodecModel(nn.Module):
 
     @staticmethod
     def _get_model(
-        target_bandwidths: tp.List[float],
+        target_bandwidths: list[float],
         sample_rate: int = 24_000,
         channels: int = 1,
         causal: bool = True,
         model_norm: str = "weight_norm",
         audio_normalize: bool = False,
-        segment: tp.Optional[float] = None,
+        segment: Optional[float] = None,
         name: str = "unset",
     ):
         encoder = SEANetEncoder(channels=channels, norm=model_norm, causal=causal)
@@ -203,7 +201,7 @@ class EncodecModel(nn.Module):
         return model
 
     @staticmethod
-    def _get_pretrained(checkpoint_name: str, repository: tp.Optional[Path] = None):
+    def _get_pretrained(checkpoint_name: str, repository: Optional[Path] = None):
         if repository is not None:
             if not repository.is_dir():
                 raise ValueError(f"{repository} must exist and be a directory.")
@@ -218,9 +216,7 @@ class EncodecModel(nn.Module):
             )  # type:ignore
 
     @staticmethod
-    def encodec_model_24khz(
-        pretrained: bool = True, repository: tp.Optional[Path] = None
-    ):
+    def encodec_model_24khz(pretrained: bool = True, repository: Optional[Path] = None):
         """Return the pretrained causal 24khz model."""
         if repository:
             assert pretrained
@@ -244,9 +240,7 @@ class EncodecModel(nn.Module):
         return model
 
     @staticmethod
-    def encodec_model_48khz(
-        pretrained: bool = True, repository: tp.Optional[Path] = None
-    ):
+    def encodec_model_48khz(pretrained: bool = True, repository: Optional[Path] = None):
         """Return the pretrained 48khz model."""
         if repository:
             assert pretrained

@@ -6,14 +6,14 @@
 
 """Various utilities."""
 
-import typing as tp
 from hashlib import sha256
 from pathlib import Path
 
 import torch
+from torch import Tensor
 
 
-def _linear_overlap_add(frames: tp.List[torch.Tensor], stride: int):
+def _linear_overlap_add(frames: list[Tensor], stride: int):
     # Generic overlap add, with linear fade-in/fade-out, supporting complex scenario
     # e.g., more than 2 frames per position.
     # The core idea is to use a weight function that is a triangle,

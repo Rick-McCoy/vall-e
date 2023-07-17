@@ -1,20 +1,14 @@
 import numpy as np
 from g2pk import G2p
 
-ASCII = list(chr(i) for i in range(128))
 HANGUL_JAMO_INITIAL = list(chr(i) for i in range(0x1100, 0x1113))
 HANGUL_JAMO_MEDIAL = list(chr(i) for i in range(0x1161, 0x1176))
 HANGUL_JAMO_FINAL = list(chr(i) for i in range(0x11A8, 0x11C3))
-SPECIAL_CHARACTERS = ["<EOS>", "<PAD>"]
+SPECIAL_CHARACTERS = ["<PAD>"]
 CHARACTERS = (
-    ASCII
-    + HANGUL_JAMO_INITIAL
-    + HANGUL_JAMO_MEDIAL
-    + HANGUL_JAMO_FINAL
-    + SPECIAL_CHARACTERS
+    HANGUL_JAMO_INITIAL + HANGUL_JAMO_MEDIAL + HANGUL_JAMO_FINAL + SPECIAL_CHARACTERS
 )
 CHAR_TO_CODE = {char: i for i, char in enumerate(CHARACTERS)}
-CODE_TO_CHAR = {i: char for i, char in enumerate(CHARACTERS)}
 VOCAB_SIZE = len(CHARACTERS)
 g2p = G2p()
 
@@ -34,8 +28,6 @@ def split_hangul_jamo(text: str) -> list[str]:
             jamo_list.append(chr(0x1161 + ((ord(char) - 0xAC00) % 588) // 28))
             if (ord(char) - 0xAC00) % 28 != 0:
                 jamo_list.append(chr(0x11A8 + (ord(char) - 0xAC00) % 28 - 1))
-        else:
-            jamo_list.append(char)
     return jamo_list
 
 
@@ -121,11 +113,10 @@ def encode_text(text: str) -> np.ndarray:
     Returns:
         np.ndarray: Shape: (N,)"""
 
-    code = []
     text = remove_artifacts(text)
     text = normalize_space(text)
     text = g2p(text)
-    for char in split_hangul_jamo(text):
-        code.append(CHAR_TO_CODE[char])
+    split_text = split_hangul_jamo(text)
+    code = [CHAR_TO_CODE[char] for char in split_text]
 
     return np.array(code, dtype=np.int64)

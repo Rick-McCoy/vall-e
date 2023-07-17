@@ -1,5 +1,5 @@
 import torch
-from torch import nn
+from torch import Tensor, nn
 
 from config.config import Config
 from utils.utils import unpad_sequence
@@ -20,20 +20,8 @@ class DelayAudio(nn.Module):
         >>> delay_audio = DelayAudio(cfg)
         >>> a = torch.zeros((2, 4, 3), dtype=torch.long)
         >>> length = torch.tensor([1, 3])
-        >>> non_target, non_target_length = delay_audio(a, length, False)
-        >>> print(non_target)
-        tensor([[[1024,    0, 1025, 1025, 1025, 1026, 1026],
-                [1024, 1024,    0, 1025, 1025, 1026, 1026],
-                [1024, 1024, 1024,    0, 1025, 1026, 1026],
-                [1024, 1024, 1024, 1024,    0, 1026, 1026],
-                [[1024,    0,    0,    0, 1025, 1025, 1025],
-                [1024, 1024,    0,    0,    0, 1025, 1025],
-                [1024, 1024, 1024,    0,    0,    0, 1025],
-                [1024, 1024, 1024, 1024,    0,    0,    0]]])
-        >>> print(non_target_length)
-        tensor([5, 7])
-        >>> target, target_length = delay_audio(a, length, True)
-        >>> print(target)
+        >>> delayed_audio, delayed_audio_length = delay_audio(a, length, False)
+        >>> print(delayed_audio)
         tensor([[[   0, 1025, 1025, 1025, 1025, 1026, 1026],
                 [1024,    0, 1025, 1025, 1025, 1026, 1026],
                 [1024, 1024,    0, 1025, 1025, 1026, 1026],
@@ -42,9 +30,11 @@ class DelayAudio(nn.Module):
                 [1024,    0,    0,    0, 1025, 1025, 1025],
                 [1024, 1024,    0,    0,    0, 1025, 1025],
                 [1024, 1024, 1024,    0,    0,    0, 1025]]])
-        >>> print(target_length)
+        >>> print(delayed_audio_length)
         tensor([5, 7])
-        >>> original, original_length = delay_audio.remove_delay(target, target_length)
+        >>> original, original_length = delay_audio.remove_delay(
+            delayed_audio, delayed_audio_length
+        )
         >>> print(original)
         tensor([[[   0, 1026, 1026],
                 [   0, 1026, 1026],
@@ -70,7 +60,7 @@ class DelayAudio(nn.Module):
                 dtype=torch.long,
             ),
         )
-        self.audio_sos: torch.Tensor
+        self.audio_sos: Tensor
         self.register_buffer(
             "audio_eos",
             torch.full(
@@ -79,26 +69,19 @@ class DelayAudio(nn.Module):
                 dtype=torch.long,
             ),
         )
-        self.audio_eos: torch.Tensor
+        self.audio_eos: Tensor
         self.audio_pad = float(2**cfg.data.codec_bits + 2)
 
-    def forward(
-        self, audio: torch.Tensor, audio_len: torch.Tensor, target: bool = False
-    ):
+    def forward(self, audio: Tensor, audio_len: Tensor):
         with torch.no_grad():
             split_audio = unpad_sequence(
                 audio.transpose(1, 2), audio_len, batch_first=True
             )
-            offset = 0 if target else 1
-            padded_audio = [
+            delayed = [
                 torch.stack(
                     [
                         torch.cat(
-                            [
-                                self.audio_sos[: i + offset],
-                                audio_item[:, i],
-                                self.audio_eos[i + offset :],
-                            ],
+                            [self.audio_sos[:i], audio_item[:, i], self.audio_eos[i:]],
                             dim=0,
                         )
                         for i in range(self.n_channels)
@@ -108,16 +91,15 @@ class DelayAudio(nn.Module):
                 for audio_item in split_audio
             ]
             audio_len = audio_len + self.n_channels
-            return (
-                torch.nn.utils.rnn.pad_sequence(
-                    [padded_audio_item.T for padded_audio_item in padded_audio],
-                    batch_first=True,
-                    padding_value=self.audio_pad,
-                ).transpose(1, 2),
-                audio_len,
-            )
+            padded_audio = torch.nn.utils.rnn.pad_sequence(
+                [delayed_audio_item.T for delayed_audio_item in delayed],
+                batch_first=True,
+                padding_value=self.audio_pad,
+            ).transpose(1, 2)
 
-    def remove_delay(self, audio: torch.Tensor, audio_len: torch.Tensor):
+            return padded_audio, audio_len
+
+    def remove_delay(self, audio: Tensor, audio_len: Tensor):
         with torch.no_grad():
             split_audio = unpad_sequence(
                 audio.transpose(1, 2), audio_len, batch_first=True

@@ -1,18 +1,19 @@
 from pathlib import Path
-from typing import Literal, Optional, cast
+from typing import Optional, cast
 
 import numpy as np
 import soundfile as sf
 import torch
-import torchaudio
+from torch import Tensor
 from torchaudio.transforms import MelSpectrogram, Resample
 
-from encodec.model import EncodecModel, EncodedFrame
+from encodec.model import EncodecModel
 from encodec.modules.lstm import SLSTM
 from utils.model import remove_weight_norm
+from utils.types import ChannelEnum
 
 
-def load_audio(path: Path, target_sr: int, channels: Literal[1, 2]) -> np.ndarray:
+def load_audio(path: Path, target_sr: int, channels: ChannelEnum) -> np.ndarray:
     """Loads an audio file into a numpy array.
 
     Args:
@@ -67,15 +68,15 @@ def write_codec(path: Path, codec: np.ndarray):
     np.save(path, codec)
 
 
-def audio_to_codec(audio: torch.Tensor, encodec_model: EncodecModel) -> torch.Tensor:
+def audio_to_codec(audio: Tensor, encodec_model: EncodecModel) -> Tensor:
     """Encodes audio to a codec tensor.
 
     Args:
-        audio (torch.Tensor): Audio tensor. Shape: (batch, channels, samples)
+        audio (Tensor): Audio tensor. Shape: (batch, channels, samples)
         encodec_model (EncodecModel): Encodec model to use for encoding.
 
     Returns:
-        codec (torch.Tensor): Codec tensor. Shape: (batch, 8, ceil(samples / compression_factor))
+        codec (Tensor): Codec tensor. Shape: (batch, 8, ceil(samples / compression_factor))
     """
     with torch.no_grad():
         frames = encodec_model.encode(audio)
@@ -85,20 +86,20 @@ def audio_to_codec(audio: torch.Tensor, encodec_model: EncodecModel) -> torch.Te
 
 
 def codec_to_audio(
-    codec: torch.Tensor,
+    codec: Tensor,
     encodec_model: Optional[EncodecModel] = None,
     sample_rate: Optional[int] = None,
-) -> torch.Tensor:
+) -> Tensor:
     """Decodes a codec tensor to audio.
 
     Args:
-        codec (torch.Tensor): Codec tensor. Shape: (batch, 8, codec_samples)
+        codec (Tensor): Codec tensor. Shape: (batch, 8, codec_samples)
         encodec_model (Optional[EncodecModel]): Encodec model to use for decoding.
         If None, uses the sample_rate argument to create a new model.
         sample_rate (Optional[int]): Sample rate to use for creating a new model.
 
     Returns:
-        audio (torch.Tensor): Audio tensor. Shape: (batch, channels, codec_samples * compression_factor)
+        audio (Tensor): Audio tensor. Shape: (batch, channels, codec_samples * compression_factor)
     """
     if encodec_model is None:
         assert sample_rate is not None
@@ -119,10 +120,12 @@ def codec_to_audio(
 
     with torch.no_grad():
         if encodec_model.segment is None:
-            frames: list[EncodedFrame] = [(codec, None)]
+            frames: list[tuple[Tensor, Tensor | None]] = [(codec, None)]
         else:
             segments = torch.split(codec, 150, dim=-1)
-            frames: list[EncodedFrame] = [(segment, None) for segment in segments]
+            frames: list[tuple[Tensor, Tensor | None]] = [
+                (segment, None) for segment in segments
+            ]
         for module in encodec_model.encoder.model:
             if isinstance(module, SLSTM):
                 module.lstm.flatten_parameters()
@@ -132,25 +135,8 @@ def codec_to_audio(
         return encodec_model.decode(frames)
 
 
-def trim_audio(audio: torch.Tensor, sr: int) -> torch.Tensor:
-    """Trims silence from the beginning and end of an audio tensor.
-
-    Args:
-        audio (torch.Tensor): Audio
-
-    Returns:
-        audio (torch.Tensor): Trimmed audio
-    """
-    with torch.no_grad():
-        trim_front_audio = torchaudio.functional.vad(audio, sr)
-        trim_back_audio = torchaudio.functional.vad(
-            trim_front_audio.flip(dims=[-1]), sr
-        ).flip(dims=[-1])
-        return trim_back_audio
-
-
 def mel_spectrogram(
-    audio: torch.Tensor,
+    audio: Tensor,
     n_fft: int,
     num_mels: int,
     sampling_rate: int,
@@ -159,7 +145,7 @@ def mel_spectrogram(
     fmin: float,
     fmax: Optional[float] = None,
     center=False,
-) -> torch.Tensor:
+) -> Tensor:
     with torch.no_grad():
         transform = MelSpectrogram(
             sample_rate=sampling_rate,

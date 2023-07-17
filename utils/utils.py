@@ -1,9 +1,9 @@
-import torch
+from torch import Tensor
 
 
 def unpad_sequence(
-    padded_sequences: torch.Tensor, lengths: torch.Tensor, batch_first: bool = False
-) -> list[torch.Tensor]:
+    padded_sequences: Tensor, lengths: Tensor, batch_first: bool = False
+) -> list[Tensor]:
     """Unpad padded Tensor into a list of variable length Tensors
     The padded dimension must be the second dimension if batch_first is False
     The padded dimension must be the first dimension if batch_first is True
@@ -25,12 +25,12 @@ def unpad_sequence(
         torch.Size([1, 2, 20])
 
     Args:
-        padded_sequences (torch.Tensor): Padded Tensor
-        lengths (torch.Tensor): Lengths of each sequence
+        padded_sequences (Tensor): Padded Tensor
+        lengths (Tensor): Lengths of each sequence
         batch_first (bool, optional): Whether the batch dimension is the first
 
     Returns:
-        list[torch.Tensor]: List of unpadded Tensors
+        list[Tensor]: List of unpadded Tensors
     """
 
     assert padded_sequences.shape[0] == lengths.shape[0]

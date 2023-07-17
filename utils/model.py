@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch import nn
+from torch import Tensor, nn
 
 
 def remove_weight_norm(module: nn.Module):
@@ -12,17 +12,17 @@ def remove_weight_norm(module: nn.Module):
         remove_weight_norm(child)
 
 
-def nucleus_sample(logits: torch.Tensor, top_p: float = 0.9) -> torch.Tensor:
+def nucleus_sample(logits: Tensor, top_p: float = 0.9) -> Tensor:
     """
     Truncate the distribution to the top_p percentile using the
     cumulative probability distribution of the sorted logit values.
 
     Args:
-        logits (torch.Tensor): Logits of the next token.
+        logits (Tensor): Logits of the next token.
         top_p (float): The probability mass of the top_p tokens.
 
     Returns:
-        torch.Tensor: The sampled token.
+        Tensor: The sampled token.
     """
     sorted_logits, sorted_indices = torch.sort(logits, descending=True)
     cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)

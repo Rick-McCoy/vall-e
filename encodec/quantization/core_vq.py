@@ -31,15 +31,11 @@
 
 """Core vector quantization implementation."""
 
-import typing as tp
+from typing import Optional, cast
 
 import torch
 import torch.nn.functional as F
-from torch import nn
-
-
-def default(val: tp.Any, d: tp.Any) -> tp.Any:
-    return val if val is not None else d
+from torch import Tensor, nn
 
 
 def uniform_init(*shape: int):
@@ -48,7 +44,7 @@ def uniform_init(*shape: int):
     return t
 
 
-def sample_vectors(samples, num: int):
+def sample_vectors(samples: Tensor, num: int):
     num_samples, device = samples.shape[0], samples.device
 
     if num_samples >= num:
@@ -59,7 +55,7 @@ def sample_vectors(samples, num: int):
     return samples[indices]
 
 
-def kmeans(samples, num_clusters: int, num_iters: int = 10):
+def kmeans(samples: Tensor, num_clusters: int, num_iters: int = 10):
     dim, dtype = samples.shape[-1], samples.dtype
 
     means = sample_vectors(samples, num_clusters)
@@ -104,7 +100,7 @@ class EuclideanCodebook(nn.Module):
         self,
         dim: int,
         codebook_size: int,
-        kmeans_init: int = False,
+        kmeans_init: bool = False,
         kmeans_iters: int = 10,
         decay: float = 0.99,
         epsilon: float = 1e-5,
@@ -112,9 +108,7 @@ class EuclideanCodebook(nn.Module):
     ):
         super().__init__()
         self.decay = decay
-        init_fn: tp.Union[tp.Callable[..., torch.Tensor], tp.Any] = (
-            uniform_init if not kmeans_init else torch.zeros
-        )
+        init_fn = uniform_init if not kmeans_init else torch.zeros
         embed = init_fn(codebook_size, dim)
 
         self.codebook_size = codebook_size
@@ -123,16 +117,16 @@ class EuclideanCodebook(nn.Module):
         self.epsilon = epsilon
         self.threshold_ema_dead_code = threshold_ema_dead_code
 
-        self.register_buffer("inited", torch.Tensor([not kmeans_init]))
-        self.inited: torch.Tensor
+        self.register_buffer("inited", torch.tensor([not kmeans_init]))
+        self.inited: Tensor
         self.register_buffer("cluster_size", torch.zeros(codebook_size))
-        self.cluster_size: torch.Tensor
+        self.cluster_size: Tensor
         self.register_buffer("embed", embed)
-        self.embed: torch.Tensor
+        self.embed: Tensor
         self.register_buffer("embed_avg", embed.clone())
-        self.embed_avg: torch.Tensor
+        self.embed_avg: Tensor
 
-    def init_embed_(self, data):
+    def init_embed_(self, data: Tensor):
         if self.inited:
             return
 
@@ -143,12 +137,12 @@ class EuclideanCodebook(nn.Module):
         self.cluster_size.data.copy_(cluster_size)
         self.inited.data.copy_(torch.tensor([True]))
 
-    def preprocess(self, x):
+    def preprocess(self, x: Tensor):
         # x = rearrange(x, "... d -> (...) d")
         x = x.flatten(0, -2)
         return x
 
-    def quantize(self, x):
+    def quantize(self, x: Tensor) -> Tensor:
         embed = self.embed.t()
         dist = -(
             x.pow(2).sum(1, keepdim=True)
@@ -158,35 +152,32 @@ class EuclideanCodebook(nn.Module):
         embed_ind = dist.max(dim=-1).indices
         return embed_ind
 
-    def postprocess_emb(self, embed_ind, shape: tp.List[int]):
-        return embed_ind.view(shape[:-1])
-
-    def dequantize(self, embed_ind):
+    def dequantize(self, embed_ind: Tensor):
         quantize = F.embedding(embed_ind, self.embed)
         return quantize
 
-    def encode(self, x):
+    def encode(self, x: Tensor):
         shape = x.shape
         # pre-process
         x = self.preprocess(x)
         # quantize
         embed_ind = self.quantize(x)
         # post-process
-        embed_ind = self.postprocess_emb(embed_ind, shape)
+        embed_ind = embed_ind.view(shape[:-1])
         return embed_ind
 
-    def decode(self, embed_ind):
+    def decode(self, embed_ind: Tensor):
         quantize = self.dequantize(embed_ind)
         return quantize
 
-    def forward(self, x):
+    def forward(self, x: Tensor):
         shape = x.shape
         x = self.preprocess(x)
 
         self.init_embed_(x)
 
         embed_ind = self.quantize(x)
-        embed_ind = self.postprocess_emb(embed_ind, shape)
+        embed_ind = embed_ind.view(shape[:-1])
         quantize = self.dequantize(embed_ind)
 
         return quantize, embed_ind
@@ -213,7 +204,7 @@ class VectorQuantization(nn.Module):
         self,
         dim: int,
         codebook_size: int,
-        codebook_dim: tp.Optional[int] = None,
+        codebook_dim: Optional[int] = None,
         decay: float = 0.99,
         epsilon: float = 1e-5,
         kmeans_init: bool = True,
@@ -222,7 +213,7 @@ class VectorQuantization(nn.Module):
         commitment_weight: float = 1.0,
     ):
         super().__init__()
-        _codebook_dim: int = default(codebook_dim, dim)
+        _codebook_dim = codebook_dim or dim
 
         requires_projection = _codebook_dim != dim
         self.project_in = (
@@ -246,38 +237,31 @@ class VectorQuantization(nn.Module):
         )
         self.codebook_size = codebook_size
 
-    @property
-    def codebook(self):
-        return self._codebook.embed
-
-    def encode(self, x):
+    def encode(self, x: Tensor):
         # x = rearrange(x, "b d n -> b n d")
         x = x.transpose(1, 2)
         x = self.project_in(x)
         embed_in = self._codebook.encode(x)
         return embed_in
 
-    def decode(self, embed_ind):
+    def decode(self, embed_ind: Tensor) -> Tensor:
         quantize = self._codebook.decode(embed_ind)
         quantize = self.project_out(quantize)
         # quantize = rearrange(quantize, "b n d -> b d n")
         quantize = quantize.transpose(1, 2)
         return quantize
 
-    def forward(self, x):
-        device = x.device
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
         # x = rearrange(x, "b d n -> b n d")
         x = x.transpose(1, 2)
         x = self.project_in(x)
 
         quantize, embed_ind = self._codebook(x)
 
-        loss = torch.tensor([0.0], device=device, requires_grad=False)
-
         quantize = self.project_out(quantize)
         # quantize = rearrange(quantize, "b n d -> b d n")
         quantize = quantize.transpose(1, 2)
-        return quantize, embed_ind, loss
+        return quantize, embed_ind
 
 
 class ResidualVectorQuantization(nn.Module):
@@ -285,39 +269,36 @@ class ResidualVectorQuantization(nn.Module):
     Follows Algorithm 1. in https://arxiv.org/pdf/2107.03312.pdf
     """
 
-    def __init__(self, *, num_quantizers, **kwargs):
+    def __init__(self, *, num_quantizers: int, **kwargs):
         super().__init__()
-        self.layers = tp.cast(
+        self.layers = cast(
             list[VectorQuantization],
             nn.ModuleList(
                 [VectorQuantization(**kwargs) for _ in range(num_quantizers)]
             ),
         )
 
-    def forward(self, x, n_q: tp.Optional[int] = None):
+    def forward(self, x: Tensor, n_q: Optional[int] = None):
         quantized_out = 0.0
         residual = x
 
-        all_losses = []
         all_indices = []
 
         n_q = len(self.layers) if n_q is None else n_q
 
         for i, layer in enumerate(self.layers):
-            quantized, indices, loss = layer(residual)
+            quantized, indices = layer(residual)
             residual = residual - quantized
             quantized_out = quantized_out + quantized
 
             all_indices.append(indices)
-            all_losses.append(loss)
             if i + 1 == n_q:
-                out_losses = torch.stack(all_losses)
                 out_indices = torch.stack(all_indices)
-                return quantized_out, out_indices, out_losses
+                return quantized_out, out_indices
 
         raise ValueError("n_q must be less than or equal to the number of quantizers")
 
-    def encode(self, x: torch.Tensor, n_q: tp.Optional[int] = None) -> torch.Tensor:
+    def encode(self, x: Tensor, n_q: Optional[int] = None) -> Tensor:
         residual = x
         all_indices = []
         n_q = len(self.layers) if n_q is None else n_q
@@ -332,7 +313,7 @@ class ResidualVectorQuantization(nn.Module):
 
         raise ValueError("n_q must be less than or equal to the number of quantizers")
 
-    def decode(self, q_indices: torch.Tensor) -> torch.Tensor:
+    def decode(self, q_indices: Tensor) -> Tensor:
         quantized_out = torch.tensor(0.0, device=q_indices.device)
         for i, layer in enumerate(self.layers):
             quantized = layer.decode(q_indices[i])

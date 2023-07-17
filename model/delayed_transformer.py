@@ -1,5 +1,5 @@
 import torch
-from torch import nn
+from torch import Tensor, nn
 from torch.nn import functional as F
 
 from config.config import Config
@@ -39,13 +39,7 @@ class DelayedTransformer(nn.Module):
             batch_first=True,
         )
 
-    def forward(
-        self,
-        text: torch.Tensor,
-        audio: torch.Tensor,
-        text_len: torch.Tensor,
-        audio_len: torch.Tensor,
-    ):
+    def forward(self, text: Tensor, audio: Tensor, text_len: Tensor, audio_len: Tensor):
         text_embedding = self.positional_encoding(self.text_embedding(text))
         audio_embedding = torch.stack(
             [
@@ -80,11 +74,7 @@ class DelayedTransformer(nn.Module):
         )
         output = torch.stack(
             [
-                F.linear(
-                    transformer_output,
-                    self.shared_audio_weight[i],
-                    bias=None,
-                )
+                F.linear(transformer_output, self.shared_audio_weight[i], bias=None)
                 for i in range(self.n_channels)
             ],
             dim=1,

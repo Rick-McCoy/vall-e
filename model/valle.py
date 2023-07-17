@@ -5,12 +5,12 @@ import torch
 import wandb
 from lightning import LightningModule
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
+from torch import Tensor
 from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from config.config import Config
-from data.datamodule import CollatedBatch
 from model.autoregressive import AutoRegressive
 from model.loss import VallELoss
 from model.nonautoregressive import NonAutoRegressive
@@ -18,6 +18,7 @@ from utils.audio import codec_to_audio, mel_spectrogram
 from utils.data import plot_mel_spectrogram
 from utils.model import nucleus_sample
 from utils.text import CHAR_TO_CODE, VOCAB_SIZE, encode_text
+from utils.types import CollatedBatch
 from utils.utils import unpad_sequence
 
 
@@ -31,10 +32,8 @@ class VallE(LightningModule):
         )
         self.codec_channels = cfg.data.codec_channels
         self.sample_rate = cfg.data.sample_rate
-        self.register_buffer(
-            "text_eos", torch.tensor([CHAR_TO_CODE["<EOS>"]], dtype=torch.long)
-        )
-        self.text_eos: torch.Tensor
+        self.register_buffer("text_eos", torch.tensor([CHAR_TO_CODE["<EOS>"]]))
+        self.text_eos: Tensor
         self.text_pad = float(CHAR_TO_CODE["<PAD>"])
         self.register_buffer(
             "codec_eos",
@@ -42,7 +41,7 @@ class VallE(LightningModule):
                 (1, cfg.data.codec_channels), 2**cfg.data.codec_bits, dtype=torch.long
             ),
         )
-        self.codec_eos: torch.Tensor
+        self.codec_eos: Tensor
         self.codec_pad = float(2**cfg.data.codec_bits + 1)
         self.lr = cfg.train.lr
         self.autoregressive = AutoRegressive(cfg)
@@ -74,12 +73,9 @@ class VallE(LightningModule):
             "gen_text",
             torch.from_numpy(encode_text(self.cfg.data.sample_sentence)).unsqueeze(0),
         )
-        self.gen_text: torch.Tensor
-        self.register_buffer(
-            "gen_text_len",
-            torch.tensor([self.gen_text.shape[1]], dtype=torch.long),
-        )
-        self.gen_text_len: torch.Tensor
+        self.gen_text: Tensor
+        self.register_buffer("gen_text_len", torch.tensor([self.gen_text.shape[1]]))
+        self.gen_text_len: Tensor
         self.max_infer_len = 1000
 
     def parse_batch(self, data: CollatedBatch):
@@ -91,7 +87,7 @@ class VallE(LightningModule):
         enrolled_audio_len = data.enrolled_audio_len.to(self.device)
         return text, text_len, audio, audio_len, enrolled_audio, enrolled_audio_len
 
-    def add_text_eos(self, text: torch.Tensor, text_len: torch.Tensor):
+    def add_text_eos(self, text: Tensor, text_len: Tensor):
         text_list = unpad_sequence(text, text_len, batch_first=True)
         text_list = [torch.cat([t, self.text_eos]) for t in text_list]
         text_len = text_len + 1
@@ -100,7 +96,7 @@ class VallE(LightningModule):
         )
         return text, text_len
 
-    def add_codec_eos(self, codec: torch.Tensor, codec_len: torch.Tensor):
+    def add_codec_eos(self, codec: Tensor, codec_len: Tensor):
         codec_list = unpad_sequence(codec.transpose(1, 2), codec_len, batch_first=True)
         codec_list = [torch.cat([t, self.codec_eos]) for t in codec_list]
         codec_len = codec_len + 1
@@ -109,7 +105,7 @@ class VallE(LightningModule):
         )
         return codec.transpose(1, 2), codec_len
 
-    def remove_codec_eos(self, codec: torch.Tensor, codec_len: torch.Tensor):
+    def remove_codec_eos(self, codec: Tensor, codec_len: Tensor):
         codec_list = unpad_sequence(codec, codec_len, batch_first=True)
         codec_list = [t[:-1] for t in codec_list]
         codec_len = codec_len - 1
@@ -118,7 +114,7 @@ class VallE(LightningModule):
         )
         return codec, codec_len
 
-    def slice_audio(self, audio: torch.Tensor, audio_len: torch.Tensor):
+    def slice_audio(self, audio: Tensor, audio_len: Tensor):
         audio_slice_list = []
         audio_slice_len_list: list[int] = []
         for audio_item, audio_len_item in zip(audio, audio_len):
@@ -145,11 +141,11 @@ class VallE(LightningModule):
 
     def ar_forward(
         self,
-        text: torch.Tensor,
-        audio: torch.Tensor,
-        text_len: torch.Tensor,
-        audio_len: torch.Tensor,
-    ) -> torch.Tensor:
+        text: Tensor,
+        audio: Tensor,
+        text_len: Tensor,
+        audio_len: Tensor,
+    ) -> Tensor:
         text, text_len = self.add_text_eos(text, text_len)
         ar_output = self.autoregressive(text, audio[:, 0], text_len, audio_len)
         ar_output_list = []
@@ -165,13 +161,13 @@ class VallE(LightningModule):
 
     def nar_forward(
         self,
-        text: torch.Tensor,
-        audio: torch.Tensor,
-        enrolled_audio: torch.Tensor,
-        text_len: torch.Tensor,
-        audio_len: torch.Tensor,
-        enrolled_audio_len: torch.Tensor,
-    ) -> torch.Tensor:
+        text: Tensor,
+        audio: Tensor,
+        enrolled_audio: Tensor,
+        text_len: Tensor,
+        audio_len: Tensor,
+        enrolled_audio_len: Tensor,
+    ) -> Tensor:
         text, text_len = self.add_text_eos(text, text_len)
         enrolled_audio, enrolled_audio_len = self.slice_audio(
             enrolled_audio, enrolled_audio_len
@@ -208,13 +204,13 @@ class VallE(LightningModule):
 
     def forward(
         self,
-        text: torch.Tensor,
-        audio: torch.Tensor,
-        enrolled_audio: torch.Tensor,
-        text_len: torch.Tensor,
-        audio_len: torch.Tensor,
-        enrolled_audio_len: torch.Tensor,
-    ) -> torch.Tensor:
+        text: Tensor,
+        audio: Tensor,
+        enrolled_audio: Tensor,
+        text_len: Tensor,
+        audio_len: Tensor,
+        enrolled_audio_len: Tensor,
+    ) -> Tensor:
         output_list = [
             self.remove_codec_eos(
                 self.ar_forward(text, audio, text_len, audio_len), audio_len + 1
@@ -236,13 +232,13 @@ class VallE(LightningModule):
 
     def inference(
         self,
-        text: torch.Tensor,
-        enrolled_text: torch.Tensor,
-        enrolled_audio: torch.Tensor,
-        text_len: torch.Tensor,
-        enrolled_text_len: torch.Tensor,
-        enrolled_audio_len: torch.Tensor,
-    ) -> torch.Tensor:
+        text: Tensor,
+        enrolled_text: Tensor,
+        enrolled_audio: Tensor,
+        text_len: Tensor,
+        enrolled_text_len: Tensor,
+        enrolled_audio_len: Tensor,
+    ) -> Tensor:
         assert len(text) == 1, "Inference only supports batch size 1"
         unpad_text = unpad_sequence(text, text_len, batch_first=True)
         unpad_enrolled_text = unpad_sequence(
@@ -290,7 +286,7 @@ class VallE(LightningModule):
 
     def single_step(
         self, batch: CollatedBatch, mode: Literal["train", "val", "test"]
-    ) -> torch.Tensor:
+    ) -> Tensor:
         (
             text,
             text_len,
@@ -329,7 +325,7 @@ class VallE(LightningModule):
             self.log(f"{mode}/nar_acc", self.nar_acc, on_epoch=True, sync_dist=True)
         return total_loss
 
-    def training_step(self, batch: CollatedBatch, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: CollatedBatch, batch_idx: int) -> Tensor:
         loss = self.single_step(batch, "train")
         if self.device.index == 0:
             scheduler = self.lr_schedulers()
@@ -404,7 +400,7 @@ class VallE(LightningModule):
                 longest_audio_len,
                 longest_enrolled_audio_len,
             )[..., :-2].argmax(dim=-1)
-            gen: torch.Tensor = self.inference(
+            gen: Tensor = self.inference(
                 text=self.gen_text,
                 enrolled_text=longest_text,
                 enrolled_audio=longest_audio,

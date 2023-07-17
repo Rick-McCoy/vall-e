@@ -5,19 +5,19 @@ import torch
 import wandb
 from lightning import LightningModule
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
-from torch import nn
+from torch import Tensor, nn
 from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from config.config import Config
-from data.datamodule import CollatedBatch
 from model.delay_audio import DelayAudio
 from model.delayed_transformer import DelayedTransformer
 from utils.audio import codec_to_audio, mel_spectrogram
 from utils.data import plot_mel_spectrogram
 from utils.model import nucleus_sample
 from utils.text import CHAR_TO_CODE, VOCAB_SIZE, encode_text
+from utils.types import CollatedBatch
 from utils.utils import unpad_sequence
 
 
@@ -30,15 +30,6 @@ class MusicGen(LightningModule):
         self.sample_rate = cfg.data.sample_rate
         self.text_pad = float(CHAR_TO_CODE["<PAD>"])
         self.register_buffer(
-            "text_space",
-            torch.full(
-                (1,),
-                CHAR_TO_CODE[" "],
-                dtype=torch.long,
-            ),
-        )
-        self.text_space: torch.Tensor
-        self.register_buffer(
             "codec_eos",
             torch.full(
                 (1, cfg.data.codec_channels, 1),
@@ -46,7 +37,7 @@ class MusicGen(LightningModule):
                 dtype=torch.long,
             ),
         )
-        self.codec_eos: torch.Tensor
+        self.codec_eos: Tensor
         self.lr = cfg.train.lr
         self.delay_audio = DelayAudio(cfg)
         self.delayed_transformer = DelayedTransformer(cfg)
@@ -68,12 +59,12 @@ class MusicGen(LightningModule):
             "sample_text",
             torch.from_numpy(encode_text(self.cfg.data.sample_sentence)).unsqueeze(0),
         )
-        self.sample_text: torch.Tensor
+        self.sample_text: Tensor
         self.register_buffer(
             "sample_text_len",
-            torch.tensor([self.sample_text.shape[1]], dtype=torch.long),
+            torch.tensor([self.sample_text.shape[1]]),
         )
-        self.sample_text_len: torch.Tensor
+        self.sample_text_len: Tensor
         self.max_infer_len = 1000
 
     def parse_batch(self, data: CollatedBatch):
@@ -85,22 +76,22 @@ class MusicGen(LightningModule):
 
     def forward(
         self,
-        text: torch.Tensor,
-        audio: torch.Tensor,
-        text_len: torch.Tensor,
-        audio_len: torch.Tensor,
-    ) -> torch.Tensor:
+        text: Tensor,
+        audio: Tensor,
+        text_len: Tensor,
+        audio_len: Tensor,
+    ) -> Tensor:
         return self.delayed_transformer(text, audio, text_len, audio_len)
 
     def inference(
         self,
-        text: torch.Tensor,
-        enrolled_text: torch.Tensor,
-        enrolled_audio: torch.Tensor,
-        text_len: torch.Tensor,
-        enrolled_text_len: torch.Tensor,
-        enrolled_audio_len: torch.Tensor,
-    ) -> torch.Tensor:
+        text: Tensor,
+        enrolled_text: Tensor,
+        enrolled_audio: Tensor,
+        text_len: Tensor,
+        enrolled_text_len: Tensor,
+        enrolled_audio_len: Tensor,
+    ) -> Tensor:
         assert len(text) == 1, "Inference only supports batch size 1"
         unpad_text = unpad_sequence(text, text_len, batch_first=True)
         unpad_enrolled_text = unpad_sequence(
@@ -108,7 +99,7 @@ class MusicGen(LightningModule):
         )
         concat_text = torch.nn.utils.rnn.pad_sequence(
             [
-                torch.cat([unpad_enrolled_text_item, self.text_space, unpad_text_item])
+                torch.cat([unpad_enrolled_text_item, unpad_text_item])
                 for unpad_text_item, unpad_enrolled_text_item in zip(
                     unpad_text, unpad_enrolled_text
                 )
@@ -120,7 +111,7 @@ class MusicGen(LightningModule):
         audio = torch.empty_like(enrolled_audio)[:, :, :0]
         audio_len = torch.zeros_like(enrolled_audio_len)
         delayed_enrolled_audio, delayed_enrolled_audio_len = self.delay_audio(
-            enrolled_audio, enrolled_audio_len, False
+            enrolled_audio, enrolled_audio_len
         )
         enrolled_audio = delayed_enrolled_audio[:, :, : 1 - self.codec_channels]
         enrolled_audio_len = delayed_enrolled_audio_len - 1 + self.codec_channels
@@ -146,13 +137,13 @@ class MusicGen(LightningModule):
 
     def single_step(
         self, batch: CollatedBatch, mode: Literal["train", "val", "test"]
-    ) -> torch.Tensor:
+    ) -> Tensor:
         (text, text_len, audio, audio_len) = self.parse_batch(batch)
-        delayed_audio, delayed_audio_len = self.delay_audio(audio, audio_len, False)
-        output = self(text, delayed_audio, text_len, delayed_audio_len)
-        target_audio, _ = self.delay_audio(audio, audio_len, True)
-        loss = self.loss(output.permute(0, 3, 1, 2), target_audio)
-        self.acc(output.permute(0, 3, 1, 2), target_audio)
+        delayed_audio, delayed_audio_len = self.delay_audio(audio, audio_len)
+        delayed_audio_len = delayed_audio_len.clamp_max(delayed_audio_len.max() - 1)
+        output = self(text, delayed_audio[:, :, :-1], text_len, delayed_audio_len)
+        loss = self.loss(output.permute(0, 3, 1, 2), delayed_audio[:, :, 1:])
+        self.acc(output.permute(0, 3, 1, 2), delayed_audio[:, :, 1:])
         if mode == "train":
             self.log(f"{mode}/loss", loss, on_step=True)
             self.log(f"{mode}/acc", self.acc, on_step=True)
@@ -161,7 +152,7 @@ class MusicGen(LightningModule):
             self.log(f"{mode}/acc", self.acc, on_epoch=True, sync_dist=True)
         return loss
 
-    def training_step(self, batch: CollatedBatch, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: CollatedBatch, batch_idx: int) -> Tensor:
         loss = self.single_step(batch, "train")
         if self.device.index == 0:
             scheduler = self.lr_schedulers()
@@ -223,14 +214,14 @@ class MusicGen(LightningModule):
             pred, _ = self.delay_audio.remove_delay(
                 self(
                     longest_text,
-                    delayed_longest_audio,
+                    delayed_longest_audio[:, :, :-1],
                     longest_text_len,
-                    delayed_longest_audio_len,
+                    delayed_longest_audio_len - 1,
                 ).argmax(dim=-1),
-                delayed_longest_audio_len,
+                delayed_longest_audio_len - 1,
             )
             pred = pred.clamp_max(2**self.cfg.data.codec_bits - 1)
-            gen: torch.Tensor = self.inference(
+            gen: Tensor = self.inference(
                 text=self.sample_text,
                 enrolled_text=longest_text,
                 enrolled_audio=longest_audio,
@@ -239,7 +230,7 @@ class MusicGen(LightningModule):
                 enrolled_audio_len=longest_audio_len,
             )
         if gen.shape[2] < 30:
-            tqdm.write(f"Warning: Generated audio is too short, {gen.shape[2]} < 30")
+            tqdm.write(f"Generated audio is too short, {gen.shape[2]} < 30")
             codec_list = [longest_audio, pred]
         else:
             codec_list = [longest_audio, pred, gen]

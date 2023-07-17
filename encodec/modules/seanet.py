@@ -6,10 +6,10 @@
 
 """Encodec SEANet-based encoder and decoder implementation."""
 
-import typing as tp
+from typing import Any, Optional
 
 import numpy as np
-import torch.nn as nn
+from torch import nn
 
 from encodec.modules.conv import SConv1d, SConvTranspose1d
 from encodec.modules.lstm import SLSTM
@@ -34,12 +34,12 @@ class SEANetResnetBlock(nn.Module):
     def __init__(
         self,
         dim: int,
-        kernel_sizes: tp.List[int] = [3, 1],
-        dilations: tp.List[int] = [1, 1],
+        kernel_sizes: list[int] = [3, 1],
+        dilations: list[int] = [1, 1],
         activation: str = "ELU",
         activation_params: dict = {"alpha": 1.0},
         norm: str = "weight_norm",
-        norm_params: tp.Dict[str, tp.Any] = {},
+        norm_params: dict[str, Any] = {},
         causal: bool = False,
         pad_mode: str = "reflect",
         compress: int = 2,
@@ -119,11 +119,11 @@ class SEANetEncoder(nn.Module):
         dimension: int = 128,
         n_filters: int = 32,
         n_residual_layers: int = 1,
-        ratios: tp.List[int] = [8, 5, 4, 2],
+        ratios: list[int] = [8, 5, 4, 2],
         activation: str = "ELU",
         activation_params: dict = {"alpha": 1.0},
         norm: str = "weight_norm",
-        norm_params: tp.Dict[str, tp.Any] = {},
+        norm_params: dict[str, Any] = {},
         kernel_size: int = 7,
         last_kernel_size: int = 7,
         residual_kernel_size: int = 3,
@@ -145,7 +145,7 @@ class SEANetEncoder(nn.Module):
 
         act = getattr(nn, activation)
         mult = 1
-        model: tp.List[nn.Module] = [
+        model: list[nn.Module] = [
             SConv1d(
                 channels,
                 mult * n_filters,
@@ -248,13 +248,13 @@ class SEANetDecoder(nn.Module):
         dimension: int = 128,
         n_filters: int = 32,
         n_residual_layers: int = 1,
-        ratios: tp.List[int] = [8, 5, 4, 2],
+        ratios: list[int] = [8, 5, 4, 2],
         activation: str = "ELU",
         activation_params: dict = {"alpha": 1.0},
-        final_activation: tp.Optional[str] = None,
-        final_activation_params: tp.Optional[dict] = None,
+        final_activation: Optional[str] = None,
+        final_activation_params: Optional[dict] = None,
         norm: str = "weight_norm",
-        norm_params: tp.Dict[str, tp.Any] = {},
+        norm_params: dict[str, Any] = {},
         kernel_size: int = 7,
         last_kernel_size: int = 7,
         residual_kernel_size: int = 3,
@@ -277,7 +277,7 @@ class SEANetDecoder(nn.Module):
 
         act = getattr(nn, activation)
         mult = int(2 ** len(self.ratios))
-        model: tp.List[nn.Module] = [
+        model: list[nn.Module] = [
             SConv1d(
                 dimension,
                 mult * n_filters,
