@@ -51,6 +51,6 @@ class VallEDataset(Dataset):
         """Returns a random audio path from the same speaker.
         Excludes the audio path at the given index."""
         indices = self.speaker_to_indices[speaker]
-        while (indice := self.rng.choice(indices)) == index:
+        while (diff_index := self.rng.choice(indices)) == index:
             pass
-        return self.codec_base_path / self.codec_path_list[indice]
+        return self.codec_base_path / self.codec_path_list[diff_index]

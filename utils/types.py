@@ -25,3 +25,9 @@ class CollatedBatch:
 class ChannelEnum(Enum):
     SINGLE = 1
     DOUBLE = 2
+
+
+class Precision(Enum):
+    FP32 = "32"
+    FP16_MIXED = "16-mixed"
+    FP16 = "16"

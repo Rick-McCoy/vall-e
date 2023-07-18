@@ -42,7 +42,7 @@ def main(cfg: Config):
     elif cfg.train.wandb:
         logger = WandbLogger(project=cfg.train.project, save_dir="logs")
     else:
-        logger = TensorBoardLogger(save_dir="logs", name="vall-e")
+        logger = TensorBoardLogger(save_dir="logs", name=cfg.train.project)
 
     callbacks = []
 
@@ -81,11 +81,12 @@ def main(cfg: Config):
     if torch.cuda.is_available():
         torch.set_float32_matmul_precision("medium")
 
-    precision = cfg.train.precision
+    precision = str(cfg.train.precision)
     assert precision == "32" or precision == "16-mixed"
     trainer = Trainer(
         strategy="ddp",
         accumulate_grad_batches=cfg.train.acc,
+        gradient_clip_val=cfg.train.gradient_clip_val,
         callbacks=callbacks,
         detect_anomaly=True,
         fast_dev_run=cfg.train.fast_dev_run,

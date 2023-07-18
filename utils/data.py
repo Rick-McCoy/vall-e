@@ -23,9 +23,9 @@ def load_metadata(
         codec_path_list (pd.Series[str]): Series of codec paths."""
 
     df = pd.read_csv(csv_path, index_col=False, dtype=str)
-    speaker_list = df["speaker"]
-    text_list = df["text"]
-    codec_path_list = df["codec_path"]
+    speaker_list = df["speaker"].reset_index(drop=True)
+    text_list = df["text"].reset_index(drop=True)
+    codec_path_list = df["codec_path"].reset_index(drop=True)
     return speaker_list, text_list, codec_path_list
 
 

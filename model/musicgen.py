@@ -115,7 +115,7 @@ class MusicGen(LightningModule):
         )
         enrolled_audio = delayed_enrolled_audio[:, :, : 1 - self.codec_channels]
         enrolled_audio_len = delayed_enrolled_audio_len - 1 + self.codec_channels
-        for _ in tqdm(range(self.max_infer_len)):
+        for _ in tqdm(range(self.max_infer_len), leave=False):
             output = self.delayed_transformer(
                 concat_text,
                 torch.cat([enrolled_audio, audio], dim=-1),
@@ -172,9 +172,16 @@ class MusicGen(LightningModule):
 
     def configure_optimizers(self):
         if self.cfg.train.optimizer == "Adam":
-            optimizer = torch.optim.Adam(params=self.parameters(), lr=self.lr)
+            optimizer = torch.optim.Adam(
+                params=self.parameters(), lr=self.lr, betas=self.cfg.train.betas
+            )
         elif self.cfg.train.optimizer == "AdamW":
-            optimizer = torch.optim.AdamW(params=self.parameters(), lr=self.lr)
+            optimizer = torch.optim.AdamW(
+                params=self.parameters(),
+                lr=self.lr,
+                weight_decay=self.cfg.train.weight_decay,
+                betas=self.cfg.train.betas,
+            )
         else:
             raise NotImplementedError(f"Unknown optimizer {self.cfg.train.optimizer}")
 
@@ -192,6 +199,13 @@ class MusicGen(LightningModule):
                 lr_lambda=lr_scale,
             )
 
+            return [optimizer], [
+                {"scheduler": scheduler, "interval": "step", "frequency": 1}
+            ]
+        elif self.cfg.train.scheduler == "CosineWithWarmup":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                optimizer, T_0=self.cfg.train.warmup_steps, T_mult=1
+            )
             return [optimizer], [
                 {"scheduler": scheduler, "interval": "step", "frequency": 1}
             ]
