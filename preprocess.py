@@ -73,7 +73,7 @@ class PreprocessDataset(Dataset):
             return None
         audio = torch.from_numpy(
             load_audio(
-                wav_path, self.cfg.data.sample_rate, self.cfg.data.audio_channels
+                wav_path, self.cfg.data.sample_rate, self.cfg.data.audio_channels.value
             )
         )
         trimmed_audio = audio[:, begin_time:end_time]

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional, cast
+from typing import Literal, Optional, cast
 
 import numpy as np
 import soundfile as sf
@@ -10,10 +10,9 @@ from torchaudio.transforms import MelSpectrogram, Resample
 from encodec.model import EncodecModel
 from encodec.modules.lstm import SLSTM
 from utils.model import remove_weight_norm
-from utils.types import ChannelEnum
 
 
-def load_audio(path: Path, target_sr: int, channels: ChannelEnum) -> np.ndarray:
+def load_audio(path: Path, target_sr: int, channels: Literal[1, 2]) -> np.ndarray:
     """Loads an audio file into a numpy array.
 
     Args:
