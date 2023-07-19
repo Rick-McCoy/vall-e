@@ -186,26 +186,44 @@ class MusicGen(LightningModule):
             raise NotImplementedError(f"Unknown optimizer {self.cfg.train.optimizer}")
 
         if self.cfg.train.scheduler == "LinearDecay":
-
-            def lr_scale(step: int) -> float:
-                return min(
-                    step / self.cfg.train.warmup_steps,
-                    (self.cfg.train.max_steps - step)
-                    / (self.cfg.train.max_steps - self.cfg.train.warmup_steps),
-                )
-
-            scheduler = torch.optim.lr_scheduler.LambdaLR(
+            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
                 optimizer,
-                lr_lambda=lr_scale,
+                start_factor=1 / self.cfg.train.warmup_steps,
+                total_iters=self.cfg.train.warmup_steps,
+            )
+            decay_scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1,
+                end_factor=0.0,
+                total_iters=self.cfg.train.max_steps - self.cfg.train.warmup_steps,
+            )
+
+            scheduler = torch.optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup_scheduler, decay_scheduler],
+                milestones=[self.cfg.train.warmup_steps],
             )
 
             return [optimizer], [
                 {"scheduler": scheduler, "interval": "step", "frequency": 1}
             ]
         elif self.cfg.train.scheduler == "CosineWithWarmup":
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-                optimizer, T_0=self.cfg.train.warmup_steps, T_mult=1
+            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1 / self.cfg.train.warmup_steps,
+                total_iters=self.cfg.train.warmup_steps,
             )
+            decay_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=self.cfg.train.max_steps - self.cfg.train.warmup_steps,
+            )
+
+            scheduler = torch.optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup_scheduler, decay_scheduler],
+                milestones=[self.cfg.train.warmup_steps],
+            )
+
             return [optimizer], [
                 {"scheduler": scheduler, "interval": "step", "frequency": 1}
             ]
