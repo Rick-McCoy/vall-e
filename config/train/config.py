@@ -25,5 +25,5 @@ class TrainConfig:
     gradient_clip_val: float = 1.0
     weight_decay: float = 0.1
     precision: Precision = Precision.FP16_MIXED
-    project: str = "musigen"
+    project: str = "musicgen"
     wandb: bool = True
