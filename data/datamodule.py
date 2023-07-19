@@ -102,7 +102,7 @@ class VallEDataModule(LightningDataModule):
     def val_dataloader(self) -> DataLoader:
         return DataLoader(
             self.val_dataset,
-            batch_size=self.batch_size,
+            batch_size=self.batch_size * 2,
             shuffle=False,
             num_workers=self.cfg.train.num_workers,
             collate_fn=partial(collate_fn, codec_pad=self.codec_pad),
@@ -112,7 +112,7 @@ class VallEDataModule(LightningDataModule):
     def test_dataloader(self) -> DataLoader:
         return DataLoader(
             self.test_dataset,
-            batch_size=self.batch_size,
+            batch_size=self.batch_size * 2,
             shuffle=False,
             num_workers=self.cfg.train.num_workers,
             collate_fn=partial(collate_fn, codec_pad=self.codec_pad),
