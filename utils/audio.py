@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Literal, Optional, cast
 
+import librosa
 import numpy as np
 import soundfile as sf
 import torch
@@ -32,6 +33,7 @@ def load_audio(path: Path, target_sr: int, channels: Literal[1, 2]) -> np.ndarra
         audio = np.repeat(audio, 2, axis=0)
     elif audio.shape[0] == 2 and channels == 1:
         audio = np.mean(audio, axis=0, keepdims=True)
+    audio, _ = librosa.effects.trim(audio, top_db=20)
     return audio
 
 

@@ -48,12 +48,12 @@ class MusicGen(LightningModule):
             ignore_index=2**cfg.data.codec_bits + 1,
         )
         self.example_input_array = (
-            torch.randint(0, VOCAB_SIZE, (2, 50)).long(),
+            torch.randint(0, VOCAB_SIZE, (8, 128)),
             torch.randint(
-                0, 2**cfg.data.codec_bits, (2, cfg.data.codec_channels, 300)
-            ).long(),
-            torch.tensor([50, 30]),
-            torch.tensor([250, 300]),
+                0, 2**cfg.data.codec_bits, (8, cfg.data.codec_channels, 1024)
+            ),
+            torch.randint(1, 128, (8,)),
+            torch.randint(1, 1024, (8,)),
         )
         self.register_buffer(
             "sample_text",

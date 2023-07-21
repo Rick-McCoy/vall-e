@@ -56,18 +56,14 @@ class PreprocessDataset(Dataset):
                 print(e)
                 return None
             text = contents["전사정보"]["TransLabelText"]
+            if len(text) == 1:
+                text = contents["전사정보"]["OrgLabelText"]
             speaker = contents["화자정보"]["SpeakerName"]
             emotion = contents["화자정보"]["Emotion"]
             sensitivity = contents["화자정보"]["Sensitivity"]
             speech_style = contents["화자정보"]["SpeechStyle"]
             character = contents["화자정보"]["Character"]
             character_emotion = contents["화자정보"]["CharacterEmotion"]
-            begin_time = int(
-                float(contents["기타정보"]["SpeechStart"]) * self.cfg.data.sample_rate
-            )
-            end_time = int(
-                float(contents["기타정보"]["SpeechEnd"]) * self.cfg.data.sample_rate
-            )
         if not wav_path.exists():
             print(f"Audio file {wav_path} does not exist")
             return None
@@ -76,10 +72,9 @@ class PreprocessDataset(Dataset):
                 wav_path, self.cfg.data.sample_rate, self.cfg.data.audio_channels.value
             )
         )
-        trimmed_audio = audio[:, begin_time:end_time]
         codec_path = Path(str(wav_path).replace("source", "codec")).with_suffix(".npy")
         return (
-            trimmed_audio,
+            audio,
             codec_path,
             text,
             "_".join(
