@@ -94,6 +94,7 @@ def audio_to_codec(
         else:
             raise NotImplementedError(f"Sample rate {sample_rate} not supported")
         remove_weight_norm(encodec_model)
+        encodec_model = encodec_model.to(audio.device)
         for module in encodec_model.encoder.model:
             if isinstance(module, SLSTM):
                 module.lstm.flatten_parameters()
@@ -106,7 +107,6 @@ def audio_to_codec(
                 encodec_model
             ),
         )
-        encodec_model = encodec_model.to(audio.device)
 
     with torch.no_grad():
         frames = encodec_model.encode(audio)
@@ -140,6 +140,7 @@ def codec_to_audio(
         else:
             raise NotImplementedError(f"Sample rate {sample_rate} not supported")
         remove_weight_norm(encodec_model)
+        encodec_model = encodec_model.to(codec.device)
         for module in encodec_model.encoder.model:
             if isinstance(module, SLSTM):
                 module.lstm.flatten_parameters()
@@ -152,7 +153,6 @@ def codec_to_audio(
                 encodec_model
             ),
         )
-        encodec_model = encodec_model.to(codec.device)
 
     with torch.no_grad():
         if encodec_model.segment is None:

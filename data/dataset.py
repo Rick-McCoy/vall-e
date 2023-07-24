@@ -34,6 +34,13 @@ class VallEDataset(Dataset):
 
         codec_path = self.codec_base_path / self.codec_path_list[index]
         codec = load_codec(codec_path)
+        if codec.shape[0] < self.cfg.data.codec_channels:
+            raise ValueError(
+                f"Audio file at {codec_path} has {codec.shape[0]} channels, "
+                f"but {self.cfg.data.codec_channels} channels were expected."
+            )
+        elif codec.shape[0] > self.cfg.data.codec_channels:
+            codec = codec[: self.cfg.data.codec_channels]
 
         speaker = self.speaker_list[index]
         enrolled_codec_path = self.get_enrolled_codec_path(speaker, index)

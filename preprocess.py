@@ -32,8 +32,8 @@ class PreprocessDataset(Dataset):
     def __init__(self, cfg: Config, mode: Literal["train", "val"]):
         self.cfg = cfg
         self.json_list = []
-        json_dir = self.cfg.data.path / mode
-        for json_path in tqdm(json_dir.glob("**/*.json")):
+        self.dir = self.cfg.data.path / mode
+        for json_path in tqdm(self.dir.glob("**/*.json")):
             codec_path = Path(str(json_path).replace("label", "codec")).with_suffix(
                 ".npy"
             )
@@ -76,10 +76,10 @@ class PreprocessDataset(Dataset):
         audio_channels = self.cfg.data.audio_channels.value
         audio = torch.from_numpy(load_audio(wav_path, sample_rate, audio_channels))
 
-        codec_path = Path(str(wav_path).replace("source", "codec")).with_suffix(".npy")
+        relative_path = wav_path.relative_to(self.dir / "source").with_suffix(".npy")
         return (
             audio,
-            codec_path,
+            relative_path,
             text,
             "_".join(
                 [
@@ -126,7 +126,13 @@ def preprocess(
         tuple[Tensor, list[int], list[Path], list[str], list[str]]
     ] = tqdm(dataloader)
     for batch in tqdm_dataloader:
-        audio_batch, audio_len_batch, codec_path_list, text_list, speaker_list = batch
+        (
+            audio_batch,
+            audio_len_batch,
+            relative_path_list,
+            text_list,
+            speaker_list,
+        ) = batch
         codec_batch = (
             audio_to_codec(audio_batch.to("cuda"), encodec_model)
             .detach()
@@ -134,14 +140,18 @@ def preprocess(
             .numpy()
             .astype(np.int16)
         )
-        for codec, audio_len, codec_path, text, speaker in zip(
-            codec_batch, audio_len_batch, codec_path_list, text_list, speaker_list
+        for codec, audio_len, relative_path, text, speaker in zip(
+            codec_batch, audio_len_batch, relative_path_list, text_list, speaker_list
         ):
             codec_len = ceil(audio_len / compression_factor)
             codec = codec[:, :codec_len]
+            codec_path = cfg.data.path / mode / "codec" / relative_path
             codec_path.parent.mkdir(exist_ok=True, parents=True)
             write_codec(codec_path, codec)
-            relative_path = codec_path.relative_to(cfg.data.path / mode / "codec")
+
+        for text, speaker, relative_path in zip(
+            text_list, speaker_list, relative_path_list
+        ):
             metadata_list.append((speaker, text, str(relative_path)))
 
     df = pd.DataFrame(metadata_list, columns=["speaker", "text", "codec_path"])
@@ -160,7 +170,12 @@ def main(cfg: Config):
     else:
         raise NotImplementedError(f"Sample rate {cfg.data.sample_rate} not supported")
 
+    encodec_model.set_target_bandwidth(
+        cfg.data.sample_rate * cfg.data.codec_channels * cfg.data.codec_bits // 1000
+    )
+
     remove_weight_norm(encodec_model)
+    encodec_model.to("cuda")
     for module in encodec_model.encoder.model:
         if isinstance(module, SLSTM):
             module.lstm.flatten_parameters()
@@ -171,7 +186,6 @@ def main(cfg: Config):
         EncodecModel,
         torch.jit.script(encodec_model),  # pyright: ignore [reportPrivateImportUsage]
     )
-    encodec_model.to("cuda")
 
     preprocess("train", cfg, encodec_model)
     preprocess("val", cfg, encodec_model)
