@@ -6,7 +6,6 @@ import wandb
 from lightning import LightningModule
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from torch import Tensor, nn
-from torch.optim.lr_scheduler import LRScheduler
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
@@ -154,10 +153,6 @@ class MusicGen(LightningModule):
 
     def training_step(self, batch: CollatedBatch, batch_idx: int) -> Tensor:
         loss = self.single_step(batch, "train")
-        if self.device.index == 0:
-            scheduler = self.lr_schedulers()
-            if isinstance(scheduler, LRScheduler):
-                self.log("train/lr", scheduler.get_last_lr()[0], on_step=True)
         return loss
 
     def validation_step(self, batch: CollatedBatch, batch_idx: int):
@@ -205,7 +200,12 @@ class MusicGen(LightningModule):
             )
 
             return [optimizer], [
-                {"scheduler": scheduler, "interval": "step", "frequency": 1}
+                {
+                    "scheduler": scheduler,
+                    "interval": "step",
+                    "frequency": 1,
+                    "name": "train/lr",
+                }
             ]
         elif self.cfg.train.scheduler == "CosineWithWarmup":
             warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -225,7 +225,12 @@ class MusicGen(LightningModule):
             )
 
             return [optimizer], [
-                {"scheduler": scheduler, "interval": "step", "frequency": 1}
+                {
+                    "scheduler": scheduler,
+                    "interval": "step",
+                    "frequency": 1,
+                    "name": "train/lr",
+                }
             ]
         elif self.cfg.train.scheduler == "None":
             return [optimizer], []

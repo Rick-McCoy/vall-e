@@ -10,6 +10,7 @@ from lightning import Trainer
 from lightning.pytorch.callbacks import (
     DeviceStatsMonitor,
     EarlyStopping,
+    LearningRateMonitor,
     ModelCheckpoint,
     StochasticWeightAveraging,
 )
@@ -101,6 +102,11 @@ def main(cfg: Config):
                 annealing_epochs=100,
                 avg_fn=avg_fn,
             )
+        )
+
+    if cfg.train.scheduler != "None":
+        callbacks.append(
+            LearningRateMonitor(logging_interval="step", log_momentum=False)
         )
 
     if torch.cuda.is_available():
