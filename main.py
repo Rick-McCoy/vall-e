@@ -51,8 +51,10 @@ def main(cfg: Config):
         checkpoint_dir = Path("checkpoints")
         if wandb.run is not None:
             checkpoint_dir /= wandb.run.name
-        elif isinstance(logger, WandbLogger) and not isinstance(
-            logger.experiment.name, str
+        elif (
+            isinstance(logger, WandbLogger)
+            and not isinstance(logger.experiment.name, str)
+            and logger.experiment.name() is not None
         ):
             checkpoint_dir /= logger.experiment.name()
         else:
