@@ -11,9 +11,10 @@ from lightning.pytorch.callbacks import (
     DeviceStatsMonitor,
     EarlyStopping,
     ModelCheckpoint,
+    StochasticWeightAveraging,
 )
 from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
-from lightning.pytorch.tuner import Tuner
+from torch import Tensor
 
 from config.config import Config
 from config.data.config import DataConfig
@@ -50,8 +51,10 @@ def main(cfg: Config):
         checkpoint_dir = Path("checkpoints")
         if wandb.run is not None:
             checkpoint_dir /= wandb.run.name
+        elif isinstance(logger, WandbLogger):
+            checkpoint_dir /= logger.experiment.name()
         else:
-            checkpoint_dir /= str(int(time.time()))
+            checkpoint_dir /= time.strftime("%Y-%m-%d_%H-%M-%S")
         callbacks.append(
             ModelCheckpoint(
                 dirpath=checkpoint_dir,
@@ -78,8 +81,26 @@ def main(cfg: Config):
             )
         )
 
+    if cfg.train.weight_average:
+
+        def avg_fn(
+            averaged_model_parameter: Tensor,
+            model_parameter: Tensor,
+            num_averaged: Tensor,
+        ) -> Tensor:
+            return averaged_model_parameter * 0.99 + model_parameter * 0.01
+
+        callbacks.append(
+            StochasticWeightAveraging(
+                swa_lrs=cfg.train.lr,
+                swa_epoch_start=0.5,
+                annealing_epochs=100,
+                avg_fn=avg_fn,
+            )
+        )
+
     if torch.cuda.is_available():
-        torch.set_float32_matmul_precision("medium")
+        torch.set_float32_matmul_precision("high")
 
     trainer = Trainer(
         strategy="ddp",
@@ -94,13 +115,6 @@ def main(cfg: Config):
         num_sanity_val_steps=10,
         precision=cfg.train.precision.value,
     )
-    tuner = Tuner(trainer)
-
-    if cfg.train.auto_lr and not cfg.train.fast_dev_run:
-        tuner.lr_find(model=compiled_model, datamodule=datamodule)
-
-    if cfg.train.auto_batch and not cfg.train.fast_dev_run:
-        tuner.scale_batch_size(model=compiled_model, datamodule=datamodule)
 
     trainer.fit(
         model=compiled_model, datamodule=datamodule, ckpt_path=cfg.train.checkpoint_path

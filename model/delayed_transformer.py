@@ -37,23 +37,24 @@ class DelayedTransformer(nn.Module):
             dim_feedforward=cfg.model.dim_feedforward,
             dropout=cfg.model.dropout,
             batch_first=True,
+            norm_first=True,
         )
 
     def forward(self, text: Tensor, audio: Tensor, text_len: Tensor, audio_len: Tensor):
         text_embedding = self.positional_encoding(self.text_embedding(text))
-        audio_embedding = torch.stack(
-            [
-                self.positional_encoding(
+        audio_embedding = self.positional_encoding(
+            torch.stack(
+                [
                     F.embedding(
                         audio[:, i],
                         self.shared_audio_weight[i],
                         padding_idx=self.padding_idx,
                     )
-                )
-                for i in range(self.n_channels)
-            ],
-            dim=1,
-        ).sum(dim=1)
+                    for i in range(self.n_channels)
+                ],
+                dim=1,
+            ).sum(dim=1)
+        )
         max_text_len = text_embedding.shape[1]
         max_audio_len = audio_embedding.shape[1]
         tgt_mask = torch.ones(

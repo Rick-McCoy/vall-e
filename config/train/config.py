@@ -7,8 +7,6 @@ from utils.types import Precision
 @dataclass
 class TrainConfig:
     acc: int = 1
-    auto_lr: bool = True
-    auto_batch: bool = False
     batch_size: int = 64
     checkpoint: bool = True
     checkpoint_path: Optional[str] = None
@@ -27,3 +25,4 @@ class TrainConfig:
     precision: Precision = Precision.FP16_MIXED
     project: str = "musicgen"
     wandb: bool = True
+    weight_average: bool = False
