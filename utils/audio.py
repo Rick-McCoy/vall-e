@@ -33,7 +33,7 @@ def load_audio(path: Path, target_sr: int, channels: Literal[1, 2]) -> np.ndarra
         audio = np.repeat(audio, 2, axis=0)
     elif audio.shape[0] == 2 and channels == 1:
         audio = np.mean(audio, axis=0, keepdims=True)
-    audio, _ = librosa.effects.trim(audio, top_db=20)
+    audio, _ = librosa.effects.trim(audio, top_db=30)
     return audio
 
 
@@ -69,16 +69,45 @@ def write_codec(path: Path, codec: np.ndarray):
     np.save(path, codec)
 
 
-def audio_to_codec(audio: Tensor, encodec_model: EncodecModel) -> Tensor:
+def audio_to_codec(
+    audio: Tensor,
+    encodec_model: Optional[EncodecModel],
+    sample_rate: Optional[int] = None,
+) -> Tensor:
     """Encodes audio to a codec tensor.
 
     Args:
         audio (Tensor): Audio tensor. Shape: (batch, channels, samples)
-        encodec_model (EncodecModel): Encodec model to use for encoding.
+        encodec_model (Optional[EncodecModel]): Encodec model to use for encoding.
+        If None, uses the sample_rate argument to create a new model.
+        sample_rate (Optional[int]): Sample rate to use for creating a new model.
 
     Returns:
         codec (Tensor): Codec tensor. Shape: (batch, 8, ceil(samples / compression_factor))
     """
+    if encodec_model is None:
+        assert sample_rate is not None
+        if sample_rate == 24000:
+            encodec_model = EncodecModel.encodec_model_24khz()
+        elif sample_rate == 48000:
+            encodec_model = EncodecModel.encodec_model_48khz()
+        else:
+            raise NotImplementedError(f"Sample rate {sample_rate} not supported")
+        remove_weight_norm(encodec_model)
+        for module in encodec_model.encoder.model:
+            if isinstance(module, SLSTM):
+                module.lstm.flatten_parameters()
+        for module in encodec_model.decoder.model:
+            if isinstance(module, SLSTM):
+                module.lstm.flatten_parameters()
+        encodec_model = cast(
+            EncodecModel,
+            torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
+                encodec_model
+            ),
+        )
+        encodec_model = encodec_model.to(audio.device)
+
     with torch.no_grad():
         frames = encodec_model.encode(audio)
         # Each frame is a tuple of (codec, scale) of 1 second segments
@@ -111,6 +140,12 @@ def codec_to_audio(
         else:
             raise NotImplementedError(f"Sample rate {sample_rate} not supported")
         remove_weight_norm(encodec_model)
+        for module in encodec_model.encoder.model:
+            if isinstance(module, SLSTM):
+                module.lstm.flatten_parameters()
+        for module in encodec_model.decoder.model:
+            if isinstance(module, SLSTM):
+                module.lstm.flatten_parameters()
         encodec_model = cast(
             EncodecModel,
             torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
@@ -127,12 +162,6 @@ def codec_to_audio(
             frames: list[tuple[Tensor, Tensor | None]] = [
                 (segment, None) for segment in segments
             ]
-        for module in encodec_model.encoder.model:
-            if isinstance(module, SLSTM):
-                module.lstm.flatten_parameters()
-        for module in encodec_model.decoder.model:
-            if isinstance(module, SLSTM):
-                module.lstm.flatten_parameters()
         return encodec_model.decode(frames)
 
 

@@ -318,7 +318,7 @@ class ResidualVectorQuantization(nn.Module):
         for i, layer in enumerate(self.layers):
             quantized = layer.decode(q_indices[i])
             quantized_out = quantized_out + quantized
-            if i == q_indices.shape[0] - 1:
+            if i + 1 == q_indices.shape[0]:
                 return quantized_out
 
         raise ValueError("n_q must be less than or equal to the number of quantizers")

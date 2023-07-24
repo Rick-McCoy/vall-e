@@ -1,7 +1,7 @@
 import json
 from math import ceil
 from pathlib import Path
-from typing import Iterable, Literal, Optional
+from typing import Iterable, Literal, Optional, cast
 
 import hydra
 import numpy as np
@@ -17,7 +17,9 @@ from config.data.config import DataConfig
 from config.model.config import ModelConfig
 from config.train.config import TrainConfig
 from encodec.model import EncodecModel
+from encodec.modules.lstm import SLSTM
 from utils.audio import audio_to_codec, load_audio, write_codec
+from utils.model import remove_weight_norm
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=Config)
@@ -30,11 +32,8 @@ class PreprocessDataset(Dataset):
     def __init__(self, cfg: Config, mode: Literal["train", "val"]):
         self.cfg = cfg
         self.json_list = []
-        if mode == "train":
-            json_dir = self.cfg.data.path / "train"
-        else:
-            json_dir = self.cfg.data.path / "val"
-        for json_path in json_dir.glob("**/*.json"):
+        json_dir = self.cfg.data.path / mode
+        for json_path in tqdm(json_dir.glob("**/*.json")):
             codec_path = Path(str(json_path).replace("label", "codec")).with_suffix(
                 ".npy"
             )
@@ -47,7 +46,6 @@ class PreprocessDataset(Dataset):
 
     def __getitem__(self, idx):
         json_path = self.json_list[idx]
-        wav_path = Path(str(json_path).replace("label", "source")).with_suffix(".wav")
         with open(json_path, "r") as f:
             try:
                 contents: dict[str, dict[str, str]] = json.load(f)
@@ -55,23 +53,29 @@ class PreprocessDataset(Dataset):
                 print(f"Error occured while loading {json_path}")
                 print(e)
                 return None
+
             text = contents["전사정보"]["TransLabelText"]
             if len(text) == 1:
+                print(f"Text is too short in {json_path}")
+                print(f"Changing from {text} to {contents['전사정보']['OrgLabelText']}")
                 text = contents["전사정보"]["OrgLabelText"]
+
             speaker = contents["화자정보"]["SpeakerName"]
             emotion = contents["화자정보"]["Emotion"]
             sensitivity = contents["화자정보"]["Sensitivity"]
             speech_style = contents["화자정보"]["SpeechStyle"]
             character = contents["화자정보"]["Character"]
             character_emotion = contents["화자정보"]["CharacterEmotion"]
+
+        wav_path = Path(str(json_path).replace("label", "source")).with_suffix(".wav")
         if not wav_path.exists():
             print(f"Audio file {wav_path} does not exist")
             return None
-        audio = torch.from_numpy(
-            load_audio(
-                wav_path, self.cfg.data.sample_rate, self.cfg.data.audio_channels.value
-            )
-        )
+
+        sample_rate = self.cfg.data.sample_rate
+        audio_channels = self.cfg.data.audio_channels.value
+        audio = torch.from_numpy(load_audio(wav_path, sample_rate, audio_channels))
+
         codec_path = Path(str(wav_path).replace("source", "codec")).with_suffix(".npy")
         return (
             audio,
@@ -138,7 +142,7 @@ def preprocess(
             codec_path.parent.mkdir(exist_ok=True, parents=True)
             write_codec(codec_path, codec)
             relative_path = codec_path.relative_to(cfg.data.path / mode / "codec")
-            metadata_list.append((speaker, text, relative_path))
+            metadata_list.append((speaker, text, str(relative_path)))
 
     df = pd.DataFrame(metadata_list, columns=["speaker", "text", "codec_path"])
     if mode == "train":
@@ -155,10 +159,18 @@ def main(cfg: Config):
         encodec_model = EncodecModel.encodec_model_48khz()
     else:
         raise NotImplementedError(f"Sample rate {cfg.data.sample_rate} not supported")
-    encodec_model.set_target_bandwidth(
-        cfg.data.codec_rate * cfg.data.codec_channels * cfg.data.codec_bits / 1000
-    )
 
+    remove_weight_norm(encodec_model)
+    for module in encodec_model.encoder.model:
+        if isinstance(module, SLSTM):
+            module.lstm.flatten_parameters()
+    for module in encodec_model.decoder.model:
+        if isinstance(module, SLSTM):
+            module.lstm.flatten_parameters()
+    encodec_model = cast(
+        EncodecModel,
+        torch.jit.script(encodec_model),  # pyright: ignore [reportPrivateImportUsage]
+    )
     encodec_model.to("cuda")
 
     preprocess("train", cfg, encodec_model)

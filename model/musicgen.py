@@ -52,8 +52,8 @@ class MusicGen(LightningModule):
             torch.randint(
                 0, 2**cfg.data.codec_bits, (8, cfg.data.codec_channels, 1024)
             ),
-            torch.randint(1, 128, (8,)),
-            torch.randint(1, 1024, (8,)),
+            torch.randint(64, 128, (8,)),
+            torch.randint(512, 1024, (8,)),
         )
         self.register_buffer(
             "sample_text",
