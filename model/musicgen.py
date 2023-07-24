@@ -40,11 +40,11 @@ class MusicGen(LightningModule):
         self.lr = cfg.train.lr
         self.delay_audio = DelayAudio(cfg)
         self.delayed_transformer = DelayedTransformer(cfg)
-        self.loss = nn.CrossEntropyLoss(ignore_index=2**cfg.data.codec_bits + 1)
+        self.loss = nn.CrossEntropyLoss(ignore_index=2**cfg.data.codec_bits + 2)
         self.acc = MulticlassAccuracy(
             num_classes=2**cfg.data.codec_bits + 3,
             top_k=1,
-            ignore_index=2**cfg.data.codec_bits + 1,
+            ignore_index=2**cfg.data.codec_bits + 2,
         )
         self.example_input_array = (
             torch.randint(0, VOCAB_SIZE, (8, 128)),
