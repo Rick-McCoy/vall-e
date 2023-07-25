@@ -56,13 +56,13 @@ class DelayedTransformer(nn.Module):
         max_text_len = text_embedding.shape[1]
         max_audio_len = audio_embedding.shape[1]
         tgt_mask = torch.ones(
-            (max_audio_len, max_audio_len), dtype=torch.bool, device=audio.device
+            (max_audio_len, max_audio_len), dtype=torch.bool, device=audio_len.device
         ).triu(diagonal=1)
-        src_key_padding_mask = torch.arange(max_text_len).to(
-            text_embedding.device
-        ).unsqueeze(0) >= text_len.unsqueeze(1)
+        src_key_padding_mask = torch.arange(max_text_len).to(text_len.device).unsqueeze(
+            0
+        ) >= text_len.unsqueeze(1)
         tgt_key_padding_mask = torch.arange(max_audio_len).to(
-            audio_embedding.device
+            audio_len.device
         ).unsqueeze(0) >= audio_len.unsqueeze(1)
         transformer_output = self.transformer(
             text_embedding,

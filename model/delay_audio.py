@@ -54,19 +54,13 @@ class DelayAudio(nn.Module):
         self.n_channels = cfg.data.codec_channels
         self.register_buffer(
             "audio_sos",
-            torch.full(
-                (cfg.data.codec_channels,),
-                fill_value=2**cfg.data.codec_bits,
-                dtype=torch.long,
-            ),
+            torch.full((cfg.data.codec_channels,), fill_value=2**cfg.data.codec_bits),
         )
         self.audio_sos: Tensor
         self.register_buffer(
             "audio_eos",
             torch.full(
-                (cfg.data.codec_channels,),
-                fill_value=2**cfg.data.codec_bits + 1,
-                dtype=torch.long,
+                (cfg.data.codec_channels,), fill_value=2**cfg.data.codec_bits + 1
             ),
         )
         self.audio_eos: Tensor

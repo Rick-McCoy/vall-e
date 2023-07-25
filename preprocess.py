@@ -19,7 +19,7 @@ from config.train.config import TrainConfig
 from encodec.model import EncodecModel
 from encodec.modules.lstm import SLSTM
 from utils.audio import audio_to_codec, load_audio, write_codec
-from utils.model import remove_weight_norm
+from utils.model import remove_norm
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=Config)
@@ -98,7 +98,7 @@ def collate_fn(batch: list[Optional[tuple[Tensor, Path, str, str]]]):
     filtered_batch = [x for x in batch if x is not None]
     return (
         torch.nn.utils.rnn.pad_sequence(
-            [x[0].T for x in filtered_batch], batch_first=True
+            [x[0].T for x in filtered_batch], batch_first=True, padding_value=0
         ).transpose(1, 2),
         [x[0].shape[1] for x in filtered_batch],
         [x[1] for x in filtered_batch],
@@ -174,7 +174,7 @@ def main(cfg: Config):
         cfg.data.sample_rate * cfg.data.codec_channels * cfg.data.codec_bits // 1000
     )
 
-    remove_weight_norm(encodec_model)
+    remove_norm(encodec_model)
     encodec_model.to("cuda")
     for module in encodec_model.encoder.model:
         if isinstance(module, SLSTM):

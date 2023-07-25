@@ -66,11 +66,11 @@ class MusicGen(LightningModule):
         self.sample_text_len: Tensor
         self.max_infer_len = 1000
 
-    def parse_batch(self, data: CollatedBatch):
-        text = data.text.to(self.device)
-        audio = data.audio.to(self.device)
-        text_len = data.text_len.to(self.device)
-        audio_len = data.audio_len.to(self.device)
+    def parse_batch(self, batch: CollatedBatch):
+        text = batch.text.to(self.device)
+        audio = batch.audio.to(self.device)
+        text_len = batch.text_len.to(self.device)
+        audio_len = batch.audio_len.to(self.device)
         return text, text_len, audio, audio_len
 
     def forward(

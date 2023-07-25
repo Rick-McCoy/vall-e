@@ -35,7 +35,7 @@ def unpad_sequence(
 
     assert padded_sequences.shape[0] == lengths.shape[0]
     assert padded_sequences.shape[1] == lengths.max()
-    unpadded_sequences = []
+    unpadded_sequences: list[Tensor] = []
 
     if not batch_first:
         padded_sequences.transpose_(0, 1)
@@ -43,5 +43,8 @@ def unpad_sequence(
     for seq, length in zip(padded_sequences, lengths):
         unpacked_seq = seq[:length]
         unpadded_sequences.append(unpacked_seq)
+
+    if not batch_first:
+        unpadded_sequences = [seq.transpose(0, 1) for seq in unpadded_sequences]
 
     return unpadded_sequences

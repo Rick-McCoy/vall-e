@@ -1,15 +1,16 @@
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
+from torch.nn.utils.weight_norm import remove_weight_norm
 
 
-def remove_weight_norm(module: nn.Module):
+def remove_norm(module: nn.Module):
     try:
-        nn.utils.remove_weight_norm(module)
+        remove_weight_norm(module)
     except ValueError:
         pass
     for child in module.children():
-        remove_weight_norm(child)
+        remove_norm(child)
 
 
 def nucleus_sample(logits: Tensor, top_p: float = 0.9) -> Tensor:

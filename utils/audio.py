@@ -10,7 +10,7 @@ from torchaudio.transforms import MelSpectrogram, Resample
 
 from encodec.model import EncodecModel
 from encodec.modules.lstm import SLSTM
-from utils.model import remove_weight_norm
+from utils.model import remove_norm
 
 
 def load_audio(path: Path, target_sr: int, channels: Literal[1, 2]) -> np.ndarray:
@@ -93,7 +93,7 @@ def audio_to_codec(
             encodec_model = EncodecModel.encodec_model_48khz()
         else:
             raise NotImplementedError(f"Sample rate {sample_rate} not supported")
-        remove_weight_norm(encodec_model)
+        remove_norm(encodec_model)
         encodec_model = encodec_model.to(audio.device)
         for module in encodec_model.encoder.model:
             if isinstance(module, SLSTM):
@@ -139,7 +139,7 @@ def codec_to_audio(
             encodec_model = EncodecModel.encodec_model_48khz()
         else:
             raise NotImplementedError(f"Sample rate {sample_rate} not supported")
-        remove_weight_norm(encodec_model)
+        remove_norm(encodec_model)
         encodec_model = encodec_model.to(codec.device)
         for module in encodec_model.encoder.model:
             if isinstance(module, SLSTM):
