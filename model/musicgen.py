@@ -64,7 +64,7 @@ class MusicGen(LightningModule):
             torch.tensor([self.sample_text.shape[1]]),
         )
         self.sample_text_len: Tensor
-        self.max_infer_len = 100
+        self.max_infer_len = 1000
 
     def parse_batch(self, batch: CollatedBatch):
         text = batch.text.to(self.device)
@@ -115,16 +115,13 @@ class MusicGen(LightningModule):
         enrolled_audio = delayed_enrolled_audio[:, :, : 1 - self.codec_channels]
         enrolled_audio_len = delayed_enrolled_audio_len - 1 + self.codec_channels
         for _ in tqdm(range(self.max_infer_len), leave=False):
-            output = self.delayed_transformer(
+            logits = self.delayed_transformer(
                 concat_text,
                 torch.cat([enrolled_audio, audio], dim=-1),
                 concat_text_len,
                 enrolled_audio_len + audio_len,
-            )[0, :, -1]
-            sampled_token = torch.stack(
-                [nucleus_sample(output[i], 0.9) for i in range(self.codec_channels)],
-                dim=0,
-            ).unsqueeze(0)
+            )[:, :, -1]
+            sampled_token = nucleus_sample(logits, top_p=0.9)
             if torch.all(sampled_token == self.codec_eos):
                 break
             audio = torch.cat([audio, sampled_token], dim=-1)

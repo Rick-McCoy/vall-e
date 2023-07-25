@@ -6,7 +6,7 @@
 
 """Encodec SEANet-based encoder and decoder implementation."""
 
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 from torch import nn
@@ -251,8 +251,8 @@ class SEANetDecoder(nn.Module):
         ratios: list[int] = [8, 5, 4, 2],
         activation: str = "ELU",
         activation_params: dict = {"alpha": 1.0},
-        final_activation: str | None = None,
-        final_activation_params: dict | None = None,
+        final_activation: Optional[str] = None,
+        final_activation_params: Optional[dict] = None,
         norm: str = "weight_norm",
         norm_params: dict[str, Any] = {},
         kernel_size: int = 7,

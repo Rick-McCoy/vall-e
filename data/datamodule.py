@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Optional
 
 import numpy as np
 import torch
@@ -75,7 +76,7 @@ class VallEDataModule(LightningDataModule):
     def prepare_data(self) -> None:
         pass
 
-    def setup(self, stage: str | None = None) -> None:
+    def setup(self, stage: Optional[str] = None) -> None:
         if stage == "fit" or stage == "validate" or stage is None:
             train_val_dataset = VallEDataset(self.cfg, "train_val")
             train_val_size = len(train_val_dataset)
