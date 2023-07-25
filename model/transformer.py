@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable
 
 import torch.utils.checkpoint
 from torch import Tensor, nn
@@ -12,8 +12,8 @@ class TransformerEncoder(nn.TransformerEncoder):
         self,
         src: Tensor,
         layer: int,
-        mask: Optional[Tensor] = None,
-        src_key_padding_mask: Optional[Tensor] = None,
+        mask: Tensor | None = None,
+        src_key_padding_mask: Tensor | None = None,
         is_causal: bool = False,
     ) -> Tensor:
         output = src
@@ -76,8 +76,8 @@ class TransformerEncoderLayer(nn.TransformerEncoderLayer):
         self,
         src: Tensor,
         layer: int,
-        src_mask: Optional[Tensor] = None,
-        src_key_padding_mask: Optional[Tensor] = None,
+        src_mask: Tensor | None = None,
+        src_key_padding_mask: Tensor | None = None,
         is_causal: bool = False,
     ) -> Tensor:
         x = src

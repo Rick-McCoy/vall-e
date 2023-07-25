@@ -7,7 +7,6 @@
 """Residual vector quantizer implementation."""
 
 import math
-from typing import Optional
 
 import torch
 from torch import Tensor, nn
@@ -70,7 +69,7 @@ class ResidualVectorQuantizer(nn.Module):
             threshold_ema_dead_code=self.threshold_ema_dead_code,
         )
 
-    def forward(self, x: Tensor, frame_rate: int, bandwidth: Optional[float] = None):
+    def forward(self, x: Tensor, frame_rate: int, bandwidth: float = 0.0):
         """Residual vector quantization on the given input tensor.
         Args:
             x (Tensor): Input tensor.
@@ -88,12 +87,12 @@ class ResidualVectorQuantizer(nn.Module):
         return QuantizedResult(quantized, codes, bw)
 
     def get_num_quantizers_for_bandwidth(
-        self, frame_rate: int, bandwidth: Optional[float] = None
+        self, frame_rate: int, bandwidth: float = 0.0
     ) -> int:
         """Return n_q based on specified target bandwidth."""
         bw_per_q = self.get_bandwidth_per_quantizer(frame_rate)
         n_q = self.n_q
-        if bandwidth is not None and bandwidth > 0.0:
+        if bandwidth > 0.0:
             # bandwidth is represented as a thousandth of what it is, e.g. 6kbps bandwidth is represented as
             # bandwidth == 6.0
             n_q = int(max(1, math.floor(bandwidth * 1000 / bw_per_q)))
@@ -105,9 +104,7 @@ class ResidualVectorQuantizer(nn.Module):
         """
         return self.log2_bins * frame_rate
 
-    def encode(
-        self, x: Tensor, frame_rate: int, bandwidth: Optional[float] = None
-    ) -> Tensor:
+    def encode(self, x: Tensor, frame_rate: int, bandwidth: float = 0.0) -> Tensor:
         """Encode a given input tensor with the specified frame rate at the given bandwidth.
         The RVQ encode method sets the appropriate number of quantizers to use
         and returns indices for each quantizer.

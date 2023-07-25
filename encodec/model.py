@@ -8,7 +8,6 @@
 
 import math
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import torch
@@ -44,12 +43,12 @@ class EncodecModel(nn.Module):
         sample_rate: int,
         channels: int,
         normalize: bool = False,
-        segment: Optional[float] = None,
+        segment: float | None = None,
         overlap: float = 0.01,
         name: str = "unset",
     ):
         super().__init__()
-        self.bandwidth: Optional[float] = None
+        self.bandwidth = 0.0
         self.target_bandwidths = target_bandwidths
         self.encoder = encoder
         self.quantizer = quantizer
@@ -67,13 +66,13 @@ class EncodecModel(nn.Module):
         ), "quantizer bins must be a power of 2."
 
     @property
-    def segment_length(self) -> Optional[int]:
+    def segment_length(self) -> int | None:
         if self.segment is None:
             return None
         return int(self.segment * self.sample_rate)
 
     @property
-    def segment_stride(self) -> Optional[int]:
+    def segment_stride(self) -> int | None:
         segment_length = self.segment_length
         if segment_length is None:
             return None
@@ -104,7 +103,7 @@ class EncodecModel(nn.Module):
         ]
         return encoded_frames
 
-    def _encode_frame(self, x: Tensor) -> tuple[Tensor, Optional[Tensor]]:
+    def _encode_frame(self, x: Tensor) -> tuple[Tensor, Tensor | None]:
         length = x.shape[-1]
         duration = length / self.sample_rate
         segment = self.segment
@@ -127,7 +126,7 @@ class EncodecModel(nn.Module):
         # codes is [B, K, T], with T frames, K nb of codebooks.
         return codes, scale
 
-    def decode(self, encoded_frames: list[tuple[Tensor, Optional[Tensor]]]) -> Tensor:
+    def decode(self, encoded_frames: list[tuple[Tensor, Tensor | None]]) -> Tensor:
         """Decode the given frames into a waveform.
         Note that the output might be a bit bigger than the input. In that case,
         any extra steps at the end can be trimmed.
@@ -143,7 +142,7 @@ class EncodecModel(nn.Module):
             frames, segment_stride if segment_stride is not None else 1
         )
 
-    def _decode_frame(self, encoded_frame: tuple[Tensor, Optional[Tensor]]) -> Tensor:
+    def _decode_frame(self, encoded_frame: tuple[Tensor, Tensor | None]) -> Tensor:
         codes, scale = encoded_frame
         codes = codes.transpose(0, 1)
         emb = self.quantizer.decode(codes)
@@ -172,7 +171,7 @@ class EncodecModel(nn.Module):
         causal: bool = True,
         model_norm: str = "weight_norm",
         audio_normalize: bool = False,
-        segment: Optional[float] = None,
+        segment: float | None = None,
         name: str = "unset",
     ):
         encoder = SEANetEncoder(channels=channels, norm=model_norm, causal=causal)
@@ -201,7 +200,7 @@ class EncodecModel(nn.Module):
         return model
 
     @staticmethod
-    def _get_pretrained(checkpoint_name: str, repository: Optional[Path] = None):
+    def _get_pretrained(checkpoint_name: str, repository: Path | None = None):
         if repository is not None:
             if not repository.is_dir():
                 raise ValueError(f"{repository} must exist and be a directory.")
@@ -216,7 +215,7 @@ class EncodecModel(nn.Module):
             )  # type:ignore
 
     @staticmethod
-    def encodec_model_24khz(pretrained: bool = True, repository: Optional[Path] = None):
+    def encodec_model_24khz(pretrained: bool = True, repository: Path | None = None):
         """Return the pretrained causal 24khz model."""
         if repository:
             assert pretrained
@@ -240,7 +239,7 @@ class EncodecModel(nn.Module):
         return model
 
     @staticmethod
-    def encodec_model_48khz(pretrained: bool = True, repository: Optional[Path] = None):
+    def encodec_model_48khz(pretrained: bool = True, repository: Path | None = None):
         """Return the pretrained 48khz model."""
         if repository:
             assert pretrained

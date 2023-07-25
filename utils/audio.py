@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Literal, Optional, cast
+from typing import Literal, cast
 
 import librosa
 import numpy as np
@@ -71,16 +71,16 @@ def write_codec(path: Path, codec: np.ndarray):
 
 def audio_to_codec(
     audio: Tensor,
-    encodec_model: Optional[EncodecModel],
-    sample_rate: Optional[int] = None,
+    encodec_model: EncodecModel | None,
+    sample_rate: int | None = None,
 ) -> Tensor:
     """Encodes audio to a codec tensor.
 
     Args:
         audio (Tensor): Audio tensor. Shape: (batch, channels, samples)
-        encodec_model (Optional[EncodecModel]): Encodec model to use for encoding.
+        encodec_model (EncodecModel | None): Encodec model to use for encoding.
         If None, uses the sample_rate argument to create a new model.
-        sample_rate (Optional[int]): Sample rate to use for creating a new model.
+        sample_rate (int | None): Sample rate to use for creating a new model.
 
     Returns:
         codec (Tensor): Codec tensor. Shape: (batch, 8, ceil(samples / compression_factor))
@@ -117,16 +117,16 @@ def audio_to_codec(
 
 def codec_to_audio(
     codec: Tensor,
-    encodec_model: Optional[EncodecModel] = None,
-    sample_rate: Optional[int] = None,
+    encodec_model: EncodecModel | None = None,
+    sample_rate: int | None = None,
 ) -> Tensor:
     """Decodes a codec tensor to audio.
 
     Args:
         codec (Tensor): Codec tensor. Shape: (batch, 8, codec_samples)
-        encodec_model (Optional[EncodecModel]): Encodec model to use for decoding.
+        encodec_model (EncodecModel | None): Encodec model to use for decoding.
         If None, uses the sample_rate argument to create a new model.
-        sample_rate (Optional[int]): Sample rate to use for creating a new model.
+        sample_rate (int | None): Sample rate to use for creating a new model.
 
     Returns:
         audio (Tensor): Audio tensor. Shape: (batch, channels, codec_samples * compression_factor)
@@ -173,7 +173,7 @@ def mel_spectrogram(
     hop_size: int,
     win_size: int,
     fmin: float,
-    fmax: Optional[float] = None,
+    fmax: float | None = None,
     center=False,
 ) -> Tensor:
     with torch.no_grad():

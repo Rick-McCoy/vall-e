@@ -31,7 +31,7 @@
 
 """Core vector quantization implementation."""
 
-from typing import Optional, cast
+from typing import cast
 
 import torch
 import torch.nn.functional as F
@@ -204,7 +204,7 @@ class VectorQuantization(nn.Module):
         self,
         dim: int,
         codebook_size: int,
-        codebook_dim: Optional[int] = None,
+        codebook_dim: int | None = None,
         decay: float = 0.99,
         epsilon: float = 1e-5,
         kmeans_init: bool = True,
@@ -278,7 +278,7 @@ class ResidualVectorQuantization(nn.Module):
             ),
         )
 
-    def forward(self, x: Tensor, n_q: Optional[int] = None):
+    def forward(self, x: Tensor, n_q: int | None = None):
         quantized_out = 0.0
         residual = x
 
@@ -298,7 +298,7 @@ class ResidualVectorQuantization(nn.Module):
 
         raise ValueError("n_q must be less than or equal to the number of quantizers")
 
-    def encode(self, x: Tensor, n_q: Optional[int] = None) -> Tensor:
+    def encode(self, x: Tensor, n_q: int | None = None) -> Tensor:
         residual = x
         all_indices = []
         n_q = len(self.layers) if n_q is None else n_q

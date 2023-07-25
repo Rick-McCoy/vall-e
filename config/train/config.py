@@ -1,7 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
-
-from utils.types import Precision
 
 
 @dataclass
@@ -9,7 +6,7 @@ class TrainConfig:
     acc: int = 1
     batch_size: int = 64
     checkpoint: bool = True
-    checkpoint_path: Optional[str] = None
+    checkpoint_path: str | None = None
     early_stop: bool = True
     fast_dev_run: bool = False
     lr: float = 5e-4
@@ -22,7 +19,7 @@ class TrainConfig:
     max_steps: int = 1000000
     gradient_clip_val: float = 1.0
     weight_decay: float = 0.1
-    precision: Precision = Precision.FP16_MIXED
+    precision: str = "16-mixed"
     project: str = "musicgen"
     wandb: bool = True
     weight_average: bool = False

@@ -112,6 +112,8 @@ def main(cfg: Config):
     if torch.cuda.is_available():
         torch.set_float32_matmul_precision("high")
 
+    precision = cfg.train.precision
+    assert precision == "16-mixed" or precision == "32"
     trainer = Trainer(
         strategy="ddp",
         accumulate_grad_batches=cfg.train.acc,
@@ -123,7 +125,7 @@ def main(cfg: Config):
         log_every_n_steps=10,
         max_steps=cfg.train.max_steps,
         num_sanity_val_steps=10,
-        precision=cfg.train.precision.value,
+        precision=precision,
     )
 
     trainer.fit(

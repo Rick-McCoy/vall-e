@@ -1,7 +1,7 @@
 import json
 from math import ceil
 from pathlib import Path
-from typing import Iterable, Literal, Optional, cast
+from typing import Iterable, Literal, cast
 
 import hydra
 import numpy as np
@@ -73,7 +73,8 @@ class PreprocessDataset(Dataset):
             return None
 
         sample_rate = self.cfg.data.sample_rate
-        audio_channels = self.cfg.data.audio_channels.value
+        audio_channels = self.cfg.data.audio_channels
+        assert audio_channels == 1 or audio_channels == 2
         audio = torch.from_numpy(load_audio(wav_path, sample_rate, audio_channels))
 
         relative_path = wav_path.relative_to(self.dir / "source").with_suffix(".npy")
@@ -94,7 +95,7 @@ class PreprocessDataset(Dataset):
         )
 
 
-def collate_fn(batch: list[Optional[tuple[Tensor, Path, str, str]]]):
+def collate_fn(batch: list[tuple[Tensor, Path, str, str] | None]):
     filtered_batch = [x for x in batch if x is not None]
     return (
         torch.nn.utils.rnn.pad_sequence(

@@ -27,7 +27,7 @@ def unpad_sequence(
     Args:
         padded_sequences (Tensor): Padded Tensor
         lengths (Tensor): Lengths of each sequence
-        batch_first (bool, optional): Whether the batch dimension is the first
+        batch_first (bool): Whether the batch dimension is the first
 
     Returns:
         list[Tensor]: List of unpadded Tensors

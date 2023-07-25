@@ -64,7 +64,7 @@ class MusicGen(LightningModule):
             torch.tensor([self.sample_text.shape[1]]),
         )
         self.sample_text_len: Tensor
-        self.max_infer_len = 1000
+        self.max_infer_len = 100
 
     def parse_batch(self, batch: CollatedBatch):
         text = batch.text.to(self.device)
