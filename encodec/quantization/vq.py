@@ -35,9 +35,9 @@ class ResidualVectorQuantizer(nn.Module):
         decay (float): Decay for exponential moving average over the codebooks.
         kmeans_init (bool): Whether to use kmeans to initialize the codebooks.
         kmeans_iters (int): Number of iterations used for kmeans initialization.
-        threshold_ema_dead_code (int): Threshold for dead code expiration. Replace any codes
-            that have an exponential moving average cluster size less than the specified threshold with
-            randomly selected vector from the current batch.
+        threshold_ema_dead_code (int): Threshold for dead code expiration. Replace any
+            codes that have an exponential moving average cluster size less than the
+            specified threshold with randomly selected vector from the current batch.
     """
 
     def __init__(
@@ -93,7 +93,8 @@ class ResidualVectorQuantizer(nn.Module):
         bw_per_q = self.get_bandwidth_per_quantizer(frame_rate)
         n_q = self.n_q
         if bandwidth > 0.0:
-            # bandwidth is represented as a thousandth of what it is, e.g. 6kbps bandwidth is represented as
+            # bandwidth is represented as a thousandth of what it is, e.g. 6kbps
+            # bandwidth is represented as
             # bandwidth == 6.0
             n_q = int(max(1, math.floor(bandwidth * 1000 / bw_per_q)))
         return n_q
@@ -105,7 +106,8 @@ class ResidualVectorQuantizer(nn.Module):
         return self.log2_bins * frame_rate
 
     def encode(self, x: Tensor, frame_rate: int, bandwidth: float = 0.0) -> Tensor:
-        """Encode a given input tensor with the specified frame rate at the given bandwidth.
+        """Encode a given input tensor with the specified frame rate at the
+        given bandwidth.
         The RVQ encode method sets the appropriate number of quantizers to use
         and returns indices for each quantizer.
         """

@@ -24,11 +24,13 @@ class SEANetResnetBlock(nn.Module):
         activation (str): Activation function.
         activation_params (dict): Parameters to provide to the activation function
         norm (str): Normalization method.
-        norm_params (dict): Parameters to provide to the underlying normalization used along with the convolution.
+        norm_params (dict): Parameters to provide to the underlying normalization used
+            along with the convolution.
         causal (bool): Whether to use fully causal convolution.
         pad_mode (str): Padding mode for the convolutions.
         compress (int): Reduced dimensionality in residual branches (from Demucs v3)
-        true_skip (bool): Whether to use true skip connection or a simple convolution as the skip connection.
+        true_skip (bool): Whether to use true skip connection or a simple convolution
+            as the skip connection.
     """
 
     def __init__(
@@ -94,21 +96,23 @@ class SEANetEncoder(nn.Module):
         dimension (int): Intermediate representation dimension.
         n_filters (int): Base width for the model.
         n_residual_layers (int): nb of residual layers.
-        ratios (Sequence[int]): kernel size and stride ratios. The encoder uses downsampling ratios instead of
-            upsampling ratios, hence it will use the ratios in the reverse order to the ones specified here
-            that must match the decoder order
+        ratios (Sequence[int]): kernel size and stride ratios. The encoder uses
+            downsampling ratios instead of upsampling ratios, hence it will use the
+            ratios in the reverse order to the ones specified here that must match the
+            decoder order
         activation (str): Activation function.
         activation_params (dict): Parameters to provide to the activation function
         norm (str): Normalization method.
-        norm_params (dict): Parameters to provide to the underlying normalization used along with the convolution.
+        norm_params (dict): Parameters to provide to the underlying normalization used
+            along with the convolution.
         kernel_size (int): Kernel size for the initial convolution.
         last_kernel_size (int): Kernel size for the initial convolution.
         residual_kernel_size (int): Kernel size for the residual layers.
         dilation_base (int): How much to increase the dilation with each layer.
         causal (bool): Whether to use fully causal convolution.
         pad_mode (str): Padding mode for the convolutions.
-        true_skip (bool): Whether to use true skip connection or a simple
-            (streamable) convolution as the skip connection in the residual network blocks.
+        true_skip (bool): Whether to use true skip connection or a simple (streamable)
+            convolution as the skip connection in the residual network blocks.
         compress (int): Reduced dimensionality in residual branches (from Demucs v3).
         lstm (int): Number of LSTM layers at the end of the encoder.
     """
@@ -227,19 +231,21 @@ class SEANetDecoder(nn.Module):
         final_activation (str): Final activation function after all convolutions.
         final_activation_params (dict): Parameters to provide to the activation function
         norm (str): Normalization method.
-        norm_params (dict): Parameters to provide to the underlying normalization used along with the convolution.
+        norm_params (dict): Parameters to provide to the underlying normalization used
+            along with the convolution.
         kernel_size (int): Kernel size for the initial convolution.
         last_kernel_size (int): Kernel size for the initial convolution.
         residual_kernel_size (int): Kernel size for the residual layers.
         dilation_base (int): How much to increase the dilation with each layer.
         causal (bool): Whether to use fully causal convolution.
         pad_mode (str): Padding mode for the convolutions.
-        true_skip (bool): Whether to use true skip connection or a simple
-            (streamable) convolution as the skip connection in the residual network blocks.
+        true_skip (bool): Whether to use true skip connection or a simple (streamable)
+            convolution as the skip connection in the residual network blocks.
         compress (int): Reduced dimensionality in residual branches (from Demucs v3).
         lstm (int): Number of LSTM layers at the end of the encoder.
-        trim_right_ratio (float): Ratio for trimming at the right of the transposed convolution under the causal setup.
-            If equal to 1.0, it means that all the trimming is done at the right.
+        trim_right_ratio (float): Ratio for trimming at the right of the transposed
+            convolution under the causal setup. If equal to 1.0, it means that all the
+            trimming is done at the right.
     """
 
     def __init__(

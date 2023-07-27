@@ -31,7 +31,8 @@ class EncodecModel(nn.Module):
         channels (int): Number of audio channels.
         normalize (bool): Whether to apply audio normalization.
         segment (float or None): segment duration in sec. when doing overlap-add.
-        overlap (float): overlap between segment, given as a fraction of the segment duration.
+        overlap (float): overlap between segment, given as a fraction of the segment
+                         duration.
         name (str): name of the model, used as metadata when compressing audio.
     """
 
@@ -95,7 +96,7 @@ class EncodecModel(nn.Module):
             segment_length = length
             stride = length
         else:
-            stride = self.segment_stride  # type: ignore
+            stride = self.segment_stride
             assert stride is not None
 
         encoded_frames = [
@@ -213,7 +214,7 @@ class EncodecModel(nn.Module):
             url = _get_checkpoint_url(ROOT_URL, checkpoint_name)
             return torch.hub.load_state_dict_from_url(
                 url, map_location="cpu", check_hash=True
-            )  # type:ignore
+            )
 
     @staticmethod
     def encodec_model_24khz(pretrained: bool = True, repository: Optional[Path] = None):

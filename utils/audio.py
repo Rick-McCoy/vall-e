@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Literal, Optional, cast
+from typing import Optional, cast
 
 import librosa
 import numpy as np
@@ -13,7 +13,7 @@ from encodec.modules.lstm import SLSTM
 from utils.model import remove_norm
 
 
-def load_audio(path: Path, target_sr: int, channels: Literal[1, 2]) -> np.ndarray:
+def load_audio(path: Path, target_sr: int, channels: int) -> np.ndarray:
     """Loads an audio file into a numpy array.
 
     Args:
@@ -24,6 +24,7 @@ def load_audio(path: Path, target_sr: int, channels: Literal[1, 2]) -> np.ndarra
     Returns:
         audio (np.ndarray): Audio array. Shape: (channels, samples)"""
 
+    assert channels == 1 or channels == 2
     audio, sr = sf.read(path, always_2d=True, dtype="float32")
     audio = audio.T
     if sr != target_sr:
@@ -83,7 +84,8 @@ def audio_to_codec(
         sample_rate (Optional[int]): Sample rate to use for creating a new model.
 
     Returns:
-        codec (Tensor): Codec tensor. Shape: (batch, 8, ceil(samples / compression_factor))
+        codec (Tensor): Codec tensor.
+            Shape: (batch, channels, ceil(samples / compression_factor))
     """
     if encodec_model is None:
         assert sample_rate is not None
@@ -129,7 +131,8 @@ def codec_to_audio(
         sample_rate (Optional[int]): Sample rate to use for creating a new model.
 
     Returns:
-        audio (Tensor): Audio tensor. Shape: (batch, channels, codec_samples * compression_factor)
+        audio (Tensor): Audio tensor.
+            Shape: (batch, channels, codec_samples * compression_factor)
     """
     if encodec_model is None:
         assert sample_rate is not None

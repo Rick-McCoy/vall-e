@@ -4,7 +4,8 @@ import numpy as np
 import torch
 import wandb
 from lightning import LightningModule
-from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
+from lightning.pytorch.loggers.tensorboard import TensorBoardLogger
+from lightning.pytorch.loggers.wandb import WandbLogger
 from torch import Tensor, nn
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm

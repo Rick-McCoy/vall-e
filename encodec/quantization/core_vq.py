@@ -62,7 +62,6 @@ def kmeans(samples: Tensor, num_clusters: int, num_iters: int = 10):
 
     bins = torch.zeros_like(means)
     for _ in range(num_iters):
-        # diffs = rearrange(samples, "n d -> n () d") - rearrange(means, "c d -> () c d")
         diffs = samples.unsqueeze(1) - means.unsqueeze(0)
         dists = -(diffs**2).sum(dim=-1)
 
@@ -86,14 +85,15 @@ class EuclideanCodebook(nn.Module):
         dim (int): Dimension.
         codebook_size (int): Codebook size.
         kmeans_init (bool): Whether to use k-means to initialize the codebooks.
-            If set to true, run the k-means algorithm on the first training batch and use
-            the learned centroids as initialization.
-        kmeans_iters (int): Number of iterations used for k-means algorithm at initialization.
+            If set to true, run the k-means algorithm on the first training batch and
+            use the learned centroids as initialization.
+        kmeans_iters (int): Number of iterations used for k-means algorithm at
+            initialization.
         decay (float): Decay for exponential moving average over the codebooks.
         epsilon (float): Epsilon value for numerical stability.
-        threshold_ema_dead_code (int): Threshold for dead code expiration. Replace any codes
-            that have an exponential moving average cluster size less than the specified threshold with
-            randomly selected vector from the current batch.
+        threshold_ema_dead_code (int): Threshold for dead code expiration. Replace any
+            codes that have an exponential moving average cluster size less than the
+            specified threshold with randomly selected vector from the current batch.
     """
 
     def __init__(
@@ -138,7 +138,6 @@ class EuclideanCodebook(nn.Module):
         self.inited.data.copy_(torch.tensor([True]))
 
     def preprocess(self, x: Tensor):
-        # x = rearrange(x, "... d -> (...) d")
         x = x.flatten(0, -2)
         return x
 
@@ -189,14 +188,15 @@ class VectorQuantization(nn.Module):
     Args:
         dim (int): Dimension
         codebook_size (int): Codebook size
-        codebook_dim (int): Codebook dimension. If not defined, uses the specified dimension in dim.
+        codebook_dim (int): Codebook dimension. If not defined, uses the specified
+            dimension in dim.
         decay (float): Decay for exponential moving average over the codebooks.
         epsilon (float): Epsilon value for numerical stability.
         kmeans_init (bool): Whether to use kmeans to initialize the codebooks.
         kmeans_iters (int): Number of iterations used for kmeans initialization.
-        threshold_ema_dead_code (int): Threshold for dead code expiration. Replace any codes
-            that have an exponential moving average cluster size less than the specified threshold with
-            randomly selected vector from the current batch.
+        threshold_ema_dead_code (int): Threshold for dead code expiration. Replace any
+            codes that have an exponential moving average cluster size less than the
+            specified threshold with randomly selected vector from the current batch.
         commitment_weight (float): Weight for commitment loss.
     """
 
@@ -238,7 +238,6 @@ class VectorQuantization(nn.Module):
         self.codebook_size = codebook_size
 
     def encode(self, x: Tensor):
-        # x = rearrange(x, "b d n -> b n d")
         x = x.transpose(1, 2)
         x = self.project_in(x)
         embed_in = self._codebook.encode(x)
@@ -247,19 +246,16 @@ class VectorQuantization(nn.Module):
     def decode(self, embed_ind: Tensor) -> Tensor:
         quantize = self._codebook.decode(embed_ind)
         quantize = self.project_out(quantize)
-        # quantize = rearrange(quantize, "b n d -> b d n")
         quantize = quantize.transpose(1, 2)
         return quantize
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
-        # x = rearrange(x, "b d n -> b n d")
         x = x.transpose(1, 2)
         x = self.project_in(x)
 
         quantize, embed_ind = self._codebook(x)
 
         quantize = self.project_out(quantize)
-        # quantize = rearrange(quantize, "b n d -> b d n")
         quantize = quantize.transpose(1, 2)
         return quantize, embed_ind
 

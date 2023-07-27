@@ -29,10 +29,11 @@ cs.store(group="model", name="base_model", node=ModelConfig)
 
 
 class PreprocessDataset(Dataset):
-    def __init__(self, cfg: Config, mode: Literal["train", "val"]):
-        self.cfg = cfg
+    def __init__(self, cfg: Config, mode: Literal["train", "val"], audio_channels: int):
+        self.sample_rate = cfg.data.sample_rate
+        self.audio_channels = audio_channels
+        self.dir = cfg.data.path / mode
         self.json_list = []
-        self.dir = self.cfg.data.path / mode
         for json_path in tqdm(self.dir.glob("**/*.json")):
             codec_path = Path(str(json_path).replace("label", "codec")).with_suffix(
                 ".npy"
@@ -72,10 +73,9 @@ class PreprocessDataset(Dataset):
             print(f"Audio file {wav_path} does not exist")
             return None
 
-        sample_rate = self.cfg.data.sample_rate
-        audio_channels = self.cfg.data.audio_channels
-        assert audio_channels == 1 or audio_channels == 2
-        audio = torch.from_numpy(load_audio(wav_path, sample_rate, audio_channels))
+        audio = torch.from_numpy(
+            load_audio(wav_path, self.sample_rate, self.audio_channels)
+        )
 
         relative_path = wav_path.relative_to(self.dir / "source").with_suffix(".npy")
         return (
@@ -111,7 +111,7 @@ def collate_fn(batch: list[Optional[tuple[Tensor, Path, str, str]]]):
 def preprocess(
     mode: Literal["train"] | Literal["val"], cfg: Config, encodec_model: EncodecModel
 ):
-    dataset = PreprocessDataset(cfg, mode)
+    dataset = PreprocessDataset(cfg, mode, encodec_model.channels)
     dataloader = DataLoader(
         dataset,
         batch_size=cfg.train.batch_size,
@@ -120,7 +120,8 @@ def preprocess(
         collate_fn=collate_fn,
     )
 
-    compression_factor = cfg.data.sample_rate // cfg.data.codec_rate
+    codec_rate = cfg.data.bandwidth // cfg.data.codec_channels // cfg.data.codec_bits
+    compression_factor = cfg.data.sample_rate // codec_rate
 
     metadata_list = []
     tqdm_dataloader: Iterable[
@@ -171,9 +172,8 @@ def main(cfg: Config):
     else:
         raise NotImplementedError(f"Sample rate {cfg.data.sample_rate} not supported")
 
-    encodec_model.set_target_bandwidth(
-        cfg.data.sample_rate * cfg.data.codec_channels * cfg.data.codec_bits // 1000
-    )
+    assert encodec_model.bits_per_codebook == cfg.data.codec_bits
+    encodec_model.set_target_bandwidth(cfg.data.bandwidth / 1000)
 
     remove_norm(encodec_model)
     encodec_model.to("cuda")

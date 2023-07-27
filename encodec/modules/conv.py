@@ -44,8 +44,9 @@ def apply_parametrization_norm(module: M, norm: str = "none") -> M:
 def get_norm_module(
     module: nn.Module, causal: bool = False, norm: str = "none", **norm_kwargs
 ):
-    """Return the proper normalization module. If causal is True, this will ensure the returned
-    module is causal, or return an error if the normalization doesn't support causal evaluation.
+    """Return the proper normalization module. If causal is True, this will ensure the
+    returned module is causal, or return an error if the normalization doesn't support
+    causal evaluation.
     """
     assert norm in CONV_NORMALIZATIONS
     if norm == "layer_norm":
@@ -72,7 +73,8 @@ def get_extra_padding_for_conv1d(
 
 def pad1d(x: Tensor, paddings: tuple[int, int], mode: str = "zero", value: float = 0.0):
     """Tiny wrapper around F.pad, just to allow for reflect padding on small input.
-    If this is the case, we insert extra 0 padding to the right before the reflection happen.
+    If this is the case, we insert extra 0 padding to the right before the reflection
+    happens.
     """
     length = x.shape[-1]
     padding_left, padding_right = paddings
@@ -254,8 +256,8 @@ class SConvTranspose1d(nn.Module):
 
         # We will only trim fixed padding. Extra padding from `pad_for_conv1d` would be
         # removed at the very end, when keeping only the right length for the output,
-        # as removing it here would require also passing the length at the matching layer
-        # in the encoder.
+        # as removing it here would require also passing the length at the matching
+        # layer in the encoder.
         if self.causal:
             # Trim the padding on the right according to the specified ratio
             # if trim_right_ratio = 1.0, trim everything from right

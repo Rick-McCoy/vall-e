@@ -14,7 +14,8 @@ from lightning.pytorch.callbacks import (
     ModelCheckpoint,
     StochasticWeightAveraging,
 )
-from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
+from lightning.pytorch.loggers.tensorboard import TensorBoardLogger
+from lightning.pytorch.loggers.wandb import WandbLogger
 from torch import Tensor
 
 from config.config import Config
@@ -91,7 +92,7 @@ def main(cfg: Config):
         def avg_fn(
             averaged_model_parameter: Tensor,
             model_parameter: Tensor,
-            num_averaged: Tensor,
+            _num_averaged: Tensor,
         ) -> Tensor:
             return averaged_model_parameter * 0.99 + model_parameter * 0.01
 

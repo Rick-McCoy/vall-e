@@ -25,8 +25,8 @@ def _linear_overlap_add(frames: list[Tensor], stride: int):
     #          ...  ...
     #         /   \/   \
     #        /    /\    \
-    #            S  T       , i.e. S offset of second frame starts, T end of first frame.
-    # Then the weight function for each one is: (t - S), (T - t), with `t` a given offset.
+    #            S  T      , i.e. S offset of second frame starts, T end of first frame.
+    # Then the weight function for each one: (t - S), (T - t), with `t` a given offset.
     # After the final normalization, the weight of the second frame at position `t` is
     # (t - S) / (t - S + (T - t)) = (t - S) / (T - S), which is exactly what we want.
     #
