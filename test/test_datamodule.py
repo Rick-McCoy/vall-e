@@ -8,7 +8,7 @@ from config.config import Config
 from config.data.config import DataConfig
 from config.model.config import ModelConfig
 from config.train.config import TrainConfig
-from data.datamodule import VallEDataModule
+from data.datamodule import VoiceGenDataModule
 from utils.types import CollatedBatch
 
 cs = ConfigStore.instance()
@@ -26,7 +26,7 @@ class TestDataModule(unittest.TestCase):
                 overrides=['data.path="../../dataset/aihub-emotion/"'],
             )
             self.cfg = cast(Config, cfg)
-            self.module = VallEDataModule(self.cfg)
+            self.module = VoiceGenDataModule(self.cfg)
 
         self.module.prepare_data()
         self.module.setup()

@@ -20,7 +20,7 @@ from utils.types import CollatedBatch
 from utils.utils import unpad_sequence
 
 
-class MusicGen(LightningModule):
+class VoiceGen(LightningModule):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
         self.save_hyperparameters(cfg)
@@ -163,12 +163,13 @@ class MusicGen(LightningModule):
             self.log_table(batch, "test")
 
     def configure_optimizers(self):
+        eps = 1e-4 if self.cfg.train.precision == "16-mixed" else 1e-8
         if self.cfg.train.optimizer == "Adam":
             optimizer = torch.optim.Adam(
                 params=self.parameters(),
                 lr=self.lr,
                 betas=self.cfg.train.betas,
-                eps=1e-7,
+                eps=eps,
             )
         elif self.cfg.train.optimizer == "AdamW":
             optimizer = torch.optim.AdamW(
@@ -176,7 +177,7 @@ class MusicGen(LightningModule):
                 lr=self.lr,
                 weight_decay=self.cfg.train.weight_decay,
                 betas=self.cfg.train.betas,
-                eps=1e-7,
+                eps=eps,
             )
         else:
             raise NotImplementedError(f"Unknown optimizer {self.cfg.train.optimizer}")

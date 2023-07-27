@@ -8,7 +8,7 @@ from torch.utils.data import random_split
 from torch.utils.data.dataloader import DataLoader
 
 from config.config import Config
-from data.dataset import VallEDataset
+from data.dataset import MusicGenDataset
 from utils.text import CHAR_TO_CODE
 from utils.types import Batch, CollatedBatch
 
@@ -66,7 +66,7 @@ def collate_fn(batches: list[Batch], codec_pad: int):
     )
 
 
-class VallEDataModule(LightningDataModule):
+class VoiceGenDataModule(LightningDataModule):
     def __init__(self, cfg: Config):
         super().__init__()
         self.cfg = cfg
@@ -78,7 +78,7 @@ class VallEDataModule(LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if stage == "fit" or stage == "validate" or stage is None:
-            train_val_dataset = VallEDataset(self.cfg, "train_val")
+            train_val_dataset = MusicGenDataset(self.cfg, "train_val")
             train_val_size = len(train_val_dataset)
             train_size = int(train_val_size * self.cfg.data.train_val_split)
             val_size = train_val_size - train_size
@@ -87,7 +87,7 @@ class VallEDataModule(LightningDataModule):
             )
 
         if stage == "test" or stage is None:
-            self.test_dataset = VallEDataset(self.cfg, "test")
+            self.test_dataset = MusicGenDataset(self.cfg, "test")
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(

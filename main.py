@@ -21,8 +21,8 @@ from config.config import Config
 from config.data.config import DataConfig
 from config.model.config import ModelConfig
 from config.train.config import TrainConfig
-from data.datamodule import VallEDataModule
-from model.musicgen import MusicGen
+from data.datamodule import VoiceGenDataModule
+from model.voicegen import VoiceGen
 from utils.model import remove_norm
 
 cs = ConfigStore.instance()
@@ -34,9 +34,9 @@ cs.store(group="model", name="base_model", node=ModelConfig)
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg: Config):
-    model = MusicGen(cfg)
-    compiled_model = cast(MusicGen, torch.compile(model, disable=True))
-    datamodule = VallEDataModule(cfg)
+    model = VoiceGen(cfg)
+    compiled_model = cast(VoiceGen, torch.compile(model, disable=True))
+    datamodule = VoiceGenDataModule(cfg)
 
     Path("logs").mkdir(exist_ok=True)
     if cfg.train.fast_dev_run:

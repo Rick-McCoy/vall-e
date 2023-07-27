@@ -21,6 +21,6 @@ class TrainConfig:
     gradient_clip_val: float = 1.0
     weight_decay: float = 0.1
     precision: str = "16-mixed"
-    project: str = "musicgen"
+    project: str = "voicegen"
     wandb: bool = True
     weight_average: bool = False

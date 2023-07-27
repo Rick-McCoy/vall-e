@@ -11,7 +11,7 @@ from utils.text import encode_text
 from utils.types import Batch
 
 
-class VallEDataset(Dataset):
+class MusicGenDataset(Dataset):
     def __init__(self, cfg: Config, mode: Literal["train_val"] | Literal["test"]):
         super().__init__()
         self.cfg = cfg
