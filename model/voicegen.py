@@ -1,4 +1,3 @@
-from dataclasses import asdict
 from typing import Literal
 
 import numpy as np
@@ -7,6 +6,7 @@ import wandb
 from lightning import LightningModule
 from lightning.pytorch.loggers.tensorboard import TensorBoardLogger
 from lightning.pytorch.loggers.wandb import WandbLogger
+from omegaconf import OmegaConf
 from torch import Tensor, nn
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
@@ -25,7 +25,7 @@ from utils.utils import unpad_sequence
 class VoiceGen(LightningModule):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
-        self.save_hyperparameters(asdict(cfg))
+        self.save_hyperparameters(OmegaConf.to_container(cfg))
         self.cfg = cfg
         self.codec_channels = cfg.data.codec_channels
         self.sample_rate = cfg.data.sample_rate
