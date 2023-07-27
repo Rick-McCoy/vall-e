@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from typing import Literal
 
 import numpy as np
@@ -24,7 +25,7 @@ from utils.utils import unpad_sequence
 class VoiceGen(LightningModule):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
-        self.save_hyperparameters(cfg)
+        self.save_hyperparameters(asdict(cfg))
         self.cfg = cfg
         self.codec_channels = cfg.data.codec_channels
         self.sample_rate = cfg.data.sample_rate
