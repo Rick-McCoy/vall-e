@@ -71,7 +71,6 @@ class VoiceGenDataModule(LightningDataModule):
         super().__init__()
         self.cfg = cfg
         self.batch_size = cfg.train.batch_size
-        self.codec_pad = 2**cfg.data.codec_bits + 2
 
     def prepare_data(self) -> None:
         pass
@@ -95,7 +94,7 @@ class VoiceGenDataModule(LightningDataModule):
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.cfg.train.num_workers,
-            collate_fn=partial(collate_fn, codec_pad=self.codec_pad),
+            collate_fn=partial(collate_fn, codec_pad=self.cfg.data.codec_pad),
             pin_memory=True,
         )
 
@@ -105,7 +104,7 @@ class VoiceGenDataModule(LightningDataModule):
             batch_size=self.batch_size * 2,
             shuffle=False,
             num_workers=self.cfg.train.num_workers,
-            collate_fn=partial(collate_fn, codec_pad=self.codec_pad),
+            collate_fn=partial(collate_fn, codec_pad=self.cfg.data.codec_pad),
             pin_memory=True,
         )
 
@@ -115,6 +114,6 @@ class VoiceGenDataModule(LightningDataModule):
             batch_size=self.batch_size * 2,
             shuffle=False,
             num_workers=self.cfg.train.num_workers,
-            collate_fn=partial(collate_fn, codec_pad=self.codec_pad),
+            collate_fn=partial(collate_fn, codec_pad=self.cfg.data.codec_pad),
             pin_memory=True,
         )

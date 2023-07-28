@@ -25,9 +25,6 @@ class TestDelayAudio(unittest.TestCase):
             self.cfg = cast(Config, cfg)
             self.delay_audio = DelayAudio(self.cfg)
             self.codec_channels = self.cfg.data.codec_channels
-            self.sos = 2**self.cfg.data.codec_bits
-            self.eos = 2**self.cfg.data.codec_bits + 1
-            self.pad = 2**self.cfg.data.codec_bits + 2
 
         self.batch_len = 4
         self.max_len = 100
@@ -35,7 +32,7 @@ class TestDelayAudio(unittest.TestCase):
     def test_delay_audio(self):
         data = torch.randint(
             0,
-            2**self.cfg.data.codec_bits,
+            self.cfg.data.codec_sos,
             (self.batch_len, self.codec_channels, self.max_len),
         )
         data_len = torch.randint(1, self.max_len, (self.batch_len,))
@@ -53,7 +50,9 @@ class TestDelayAudio(unittest.TestCase):
             data_len_item = int(data_len[i].item())
             for j in range(self.codec_channels):
                 for k in range(j):
-                    self.assertEqual(delay_target_audio[i, j, k].item(), self.sos)
+                    self.assertEqual(
+                        delay_target_audio[i, j, k].item(), self.cfg.data.codec_sos
+                    )
                 for k in range(j, data_len_item + j):
                     self.assertEqual(
                         delay_target_audio[i, j, k].item(), data[i, j, k - j].item()
@@ -62,17 +61,21 @@ class TestDelayAudio(unittest.TestCase):
                     data_len_item + j,
                     data_len_item + self.codec_channels,
                 ):
-                    self.assertEqual(delay_target_audio[i, j, k].item(), self.eos)
+                    self.assertEqual(
+                        delay_target_audio[i, j, k].item(), self.cfg.data.codec_eos
+                    )
                 for k in range(
                     data_len_item + self.codec_channels,
                     self.max_len + self.codec_channels,
                 ):
-                    self.assertEqual(delay_target_audio[i, j, k].item(), self.pad)
+                    self.assertEqual(
+                        delay_target_audio[i, j, k].item(), self.cfg.data.codec_pad
+                    )
 
     def test_remove_delay(self):
         data = torch.randint(
             0,
-            2**self.cfg.data.codec_bits,
+            self.cfg.data.codec_sos,
             (self.batch_len, self.codec_channels, self.max_len),
         )
         data_len = torch.randint(1, self.max_len, (self.batch_len,))

@@ -34,7 +34,7 @@ class VoiceGen(LightningModule):
             "codec_eos",
             torch.full(
                 (1, cfg.data.codec_channels, 1),
-                2**cfg.data.codec_bits,
+                cfg.data.codec_eos,
                 dtype=torch.long,
             ),
         )
@@ -42,17 +42,15 @@ class VoiceGen(LightningModule):
         self.lr = cfg.train.lr
         self.delay_audio = DelayAudio(cfg)
         self.delayed_transformer = DelayedTransformer(cfg)
-        self.loss = nn.CrossEntropyLoss(ignore_index=2**cfg.data.codec_bits + 2)
+        self.loss = nn.CrossEntropyLoss(ignore_index=cfg.data.codec_pad)
         self.acc = MulticlassAccuracy(
-            num_classes=2**cfg.data.codec_bits + 3,
+            num_classes=cfg.data.codec_num,
             top_k=1,
-            ignore_index=2**cfg.data.codec_bits + 2,
+            ignore_index=cfg.data.codec_pad,
         )
         self.example_input_array = (
             torch.randint(0, VOCAB_SIZE, (8, 128)),
-            torch.randint(
-                0, 2**cfg.data.codec_bits, (8, cfg.data.codec_channels, 1024)
-            ),
+            torch.randint(0, cfg.data.codec_sos, (8, cfg.data.codec_channels, 1024)),
             torch.randint(64, 128, (8,)),
             torch.randint(512, 1024, (8,)),
         )
@@ -130,7 +128,7 @@ class VoiceGen(LightningModule):
             audio_len += 1
 
         audio, _ = self.delay_audio.remove_delay(audio, audio_len)
-        audio = audio.clamp_max(2**self.cfg.data.codec_bits - 1)
+        audio = audio.clamp_max(self.cfg.data.codec_sos - 1)
         return audio
 
     def single_step(
@@ -261,7 +259,7 @@ class VoiceGen(LightningModule):
                 ).argmax(dim=-1),
                 delayed_longest_audio_len - 1,
             )
-            pred = pred.clamp_max(2**self.cfg.data.codec_bits - 1)
+            pred = pred.clamp_max(self.cfg.data.codec_sos - 1)
             gen: Tensor = self.inference(
                 text=self.sample_text,
                 enrolled_text=longest_text,
@@ -289,7 +287,7 @@ class VoiceGen(LightningModule):
                 fmin=0,
                 fmax=8000,
             )
-            audio_cpu = audio.squeeze().detach().cpu() * 2**15
+            audio_cpu = audio.squeeze().detach().cpu() * np.iinfo(np.int16).max
             audio_numpy = audio_cpu.numpy().astype(np.int16)
             mel_image = plot_mel_spectrogram(mel.squeeze().detach().cpu().numpy())
             data.append((audio_numpy, mel_image))
@@ -310,7 +308,7 @@ class VoiceGen(LightningModule):
             for (audio, mel_image), name in zip(data, ["real", "pred", "gen"]):
                 self.logger.experiment.add_audio(
                     f"{mode}/Audio/{name}",
-                    audio / 2**15,
+                    audio / np.iinfo(np.int16).max,
                     self.global_step,
                     sample_rate=self.cfg.data.sample_rate,
                 )

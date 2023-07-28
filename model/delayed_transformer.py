@@ -18,12 +18,10 @@ class DelayedTransformer(nn.Module):
         )
         self.shared_audio_weight = nn.Parameter(
             torch.randn(
-                cfg.data.codec_channels,
-                2**cfg.data.codec_bits + 3,
-                cfg.model.hidden_dim,
+                cfg.data.codec_channels, cfg.data.codec_num, cfg.model.hidden_dim
             )
         )
-        self.padding_idx = 2**cfg.data.codec_bits + 2
+        self.padding_idx = cfg.data.codec_pad
         self.positional_encoding = PositionalEncoding(
             d_model=cfg.model.hidden_dim, dropout=cfg.model.dropout
         )
