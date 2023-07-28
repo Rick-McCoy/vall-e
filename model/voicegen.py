@@ -112,8 +112,8 @@ class VoiceGen(LightningModule):
         delayed_enrolled_audio, delayed_enrolled_audio_len = self.delay_audio(
             enrolled_audio, enrolled_audio_len
         )
-        enrolled_audio = delayed_enrolled_audio[:, :, : 1 - self.codec_channels]
-        enrolled_audio_len = delayed_enrolled_audio_len - 1 + self.codec_channels
+        enrolled_audio = delayed_enrolled_audio[:, :, : -self.codec_channels]
+        enrolled_audio_len = delayed_enrolled_audio_len - self.codec_channels
         for _ in tqdm(range(self.max_infer_len), leave=False):
             logits = self.delayed_transformer(
                 concat_text,
