@@ -7,8 +7,7 @@ from torch.utils.data import Dataset
 from config.config import Config
 from utils.audio import load_codec
 from utils.data import load_metadata
-from utils.text import encode_text
-from utils.types import Batch
+from utils.text import CHAR_TO_CODE, encode_text
 
 
 class MusicGenDataset(Dataset):
@@ -31,9 +30,25 @@ class MusicGenDataset(Dataset):
     def __getitem__(self, index: int):
         text = self.text_list[index]
         encoded_text = encode_text(text)
+        text_len = encoded_text.shape[0]
+
+        if text_len > self.cfg.data.max_text_len:
+            raise ValueError(
+                f"Text at index {index} has {text_len} characters, "
+                f"but at most {self.cfg.data.max_text_len} characters were expected."
+            )
+        else:
+            encoded_text = np.pad(
+                encoded_text,
+                (0, self.cfg.data.max_text_len - text_len),
+                mode="constant",
+                constant_values=CHAR_TO_CODE["<PAD>"],
+            )
 
         codec_path = self.codec_base_path / self.codec_path_list[index]
         codec = load_codec(codec_path)
+        codec_len = codec.shape[1]
+
         if codec.shape[0] < self.cfg.data.codec_channels:
             raise ValueError(
                 f"Audio file at {codec_path} has {codec.shape[0]} channels, "
@@ -42,10 +57,20 @@ class MusicGenDataset(Dataset):
         elif codec.shape[0] > self.cfg.data.codec_channels:
             codec = codec[: self.cfg.data.codec_channels]
 
-        speaker = self.speaker_list[index]
-        enrolled_codec_path = self.get_enrolled_codec_path(speaker, index)
-        enrolled_codec = load_codec(enrolled_codec_path)
-        return Batch(text=encoded_text, audio=codec, enrolled_audio=enrolled_codec)
+        if codec_len > self.cfg.data.max_codec_len:
+            raise ValueError(
+                f"Audio file at {codec_path} has {codec_len} samples, "
+                f"but at most {self.cfg.data.max_codec_len} samples were expected."
+            )
+        else:
+            codec = np.pad(
+                codec,
+                ((0, 0), (0, self.cfg.data.max_codec_len - codec_len)),
+                mode="constant",
+                constant_values=self.cfg.data.codec_pad,
+            )
+
+        return encoded_text, text_len, codec, codec_len
 
     def group_by_speaker(self) -> defaultdict[str, list[int]]:
         """Returns a dictionary mapping each speaker to a list of indices."""

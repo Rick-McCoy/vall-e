@@ -69,7 +69,6 @@ def main(cfg: Config):
                 save_top_k=3,
                 mode="min",
                 auto_insert_metric_name=False,
-                save_weights_only=True,
             )
         )
 
@@ -120,7 +119,7 @@ def main(cfg: Config):
         accumulate_grad_batches=cfg.train.acc,
         gradient_clip_val=cfg.train.gradient_clip_val,
         callbacks=callbacks,
-        detect_anomaly=True,
+        detect_anomaly=False,
         fast_dev_run=cfg.train.fast_dev_run,
         logger=logger,
         log_every_n_steps=10,
@@ -130,7 +129,9 @@ def main(cfg: Config):
     )
 
     trainer.fit(
-        model=compiled_model, datamodule=datamodule, ckpt_path=cfg.train.checkpoint_path
+        model=compiled_model,
+        datamodule=datamodule,
+        ckpt_path=cfg.train.checkpoint_path,
     )
     trainer.test(model=compiled_model, datamodule=datamodule)
 

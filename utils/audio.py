@@ -38,7 +38,7 @@ def load_audio(path: Path, target_sr: int, channels: int) -> np.ndarray:
     return audio
 
 
-def write_audio(path: Path, audio: np.ndarray, target_sr: int):
+def save_audio(path: Path, audio: np.ndarray, target_sr: int):
     """Writes an audio file from a numpy array.
 
     Args:
@@ -58,16 +58,39 @@ def load_codec(path: Path) -> np.ndarray:
 
     Returns:
         codec (np.ndarray): Codec tensor. Shape: (8, samples // compression_factor)"""
-    return np.load(path)
+    return np.load(path).astype(np.int64)
 
 
-def write_codec(path: Path, codec: np.ndarray):
+def save_codec(path: Path, codec: np.ndarray):
     """Writes a codec array to a file.
 
     Args:
         path (Path): Path to codec file.
         codec (np.ndarray): Codec tensor. Shape: (8, samples // compression_factor)"""
     np.save(path, codec)
+
+
+def get_encodec_model(sample_rate: int, device: torch.device) -> EncodecModel:
+    if sample_rate == 24000:
+        encodec_model = EncodecModel.encodec_model_24khz()
+    elif sample_rate == 48000:
+        encodec_model = EncodecModel.encodec_model_48khz()
+    else:
+        raise NotImplementedError(f"Sample rate {sample_rate} not supported")
+    remove_norm(encodec_model)
+    encodec_model = encodec_model.to(device)
+    for module in encodec_model.encoder.model:
+        if isinstance(module, SLSTM):
+            module.lstm.flatten_parameters()
+    for module in encodec_model.decoder.model:
+        if isinstance(module, SLSTM):
+            module.lstm.flatten_parameters()
+    encodec_model = cast(
+        EncodecModel,
+        torch.jit.script(encodec_model),  # pyright: ignore [reportPrivateImportUsage]
+    )
+
+    return encodec_model
 
 
 def audio_to_codec(
@@ -89,26 +112,7 @@ def audio_to_codec(
     """
     if encodec_model is None:
         assert sample_rate is not None
-        if sample_rate == 24000:
-            encodec_model = EncodecModel.encodec_model_24khz()
-        elif sample_rate == 48000:
-            encodec_model = EncodecModel.encodec_model_48khz()
-        else:
-            raise NotImplementedError(f"Sample rate {sample_rate} not supported")
-        remove_norm(encodec_model)
-        encodec_model = encodec_model.to(audio.device)
-        for module in encodec_model.encoder.model:
-            if isinstance(module, SLSTM):
-                module.lstm.flatten_parameters()
-        for module in encodec_model.decoder.model:
-            if isinstance(module, SLSTM):
-                module.lstm.flatten_parameters()
-        encodec_model = cast(
-            EncodecModel,
-            torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
-                encodec_model
-            ),
-        )
+        encodec_model = get_encodec_model(sample_rate, audio.device)
 
     with torch.no_grad():
         frames = encodec_model.encode(audio)
@@ -136,25 +140,12 @@ def codec_to_audio(
     """
     if encodec_model is None:
         assert sample_rate is not None
-        if sample_rate == 24000:
-            encodec_model = EncodecModel.encodec_model_24khz()
-        elif sample_rate == 48000:
-            encodec_model = EncodecModel.encodec_model_48khz()
-        else:
-            raise NotImplementedError(f"Sample rate {sample_rate} not supported")
-        remove_norm(encodec_model)
-        encodec_model = encodec_model.to(codec.device)
-        for module in encodec_model.encoder.model:
-            if isinstance(module, SLSTM):
-                module.lstm.flatten_parameters()
-        for module in encodec_model.decoder.model:
-            if isinstance(module, SLSTM):
-                module.lstm.flatten_parameters()
-        encodec_model = cast(
-            EncodecModel,
-            torch.jit.script(  # pyright: ignore [reportPrivateImportUsage]
-                encodec_model
-            ),
+        encodec_model = get_encodec_model(sample_rate, codec.device)
+
+    max_codec_value = encodec_model.quantizer.bins
+    if codec.max().item() >= max_codec_value:
+        raise ValueError(
+            f"Codec tensor has values greater than or equal to {max_codec_value}."
         )
 
     with torch.no_grad():

@@ -18,7 +18,7 @@ from config.model.config import ModelConfig
 from config.train.config import TrainConfig
 from encodec.model import EncodecModel
 from encodec.modules.lstm import SLSTM
-from utils.audio import audio_to_codec, load_audio, write_codec
+from utils.audio import audio_to_codec, load_audio, save_codec
 from utils.model import remove_norm
 
 cs = ConfigStore.instance()
@@ -149,7 +149,7 @@ def preprocess(
             codec = codec[:, :codec_len]
             codec_path = cfg.data.path / mode / "codec" / relative_path
             codec_path.parent.mkdir(exist_ok=True, parents=True)
-            write_codec(codec_path, codec)
+            save_codec(codec_path, codec)
 
         for text, speaker, relative_path in zip(
             text_list, speaker_list, relative_path_list

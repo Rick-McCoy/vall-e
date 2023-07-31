@@ -1,3 +1,4 @@
+import dataclasses
 from typing import Literal
 
 import numpy as np
@@ -11,21 +12,27 @@ from torch import Tensor, nn
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
-from config.config import Config
+from config.config import Config, dict_to_config
 from model.delay_audio import DelayAudio
 from model.delayed_transformer import DelayedTransformer
 from utils.audio import codec_to_audio, mel_spectrogram
 from utils.data import plot_mel_spectrogram
 from utils.model import nucleus_sample
 from utils.text import CHAR_TO_CODE, VOCAB_SIZE, encode_text
-from utils.types import CollatedBatch
 from utils.utils import unpad_sequence
 
 
 class VoiceGen(LightningModule):
-    def __init__(self, cfg: Config) -> None:
+    def __init__(self, cfg: Config | dict) -> None:
         super().__init__()
-        self.save_hyperparameters(OmegaConf.to_container(cfg))
+        if isinstance(cfg, dict):
+            cfg = dict_to_config(cfg)
+        if OmegaConf.is_config(cfg):
+            self.save_hyperparameters(OmegaConf.to_container(cfg))
+        elif isinstance(cfg, Config):
+            self.save_hyperparameters(dataclasses.asdict(cfg))
+        else:
+            self.save_hyperparameters(cfg)
         self.cfg = cfg
         self.codec_channels = cfg.data.codec_channels
         self.sample_rate = cfg.data.sample_rate
@@ -49,10 +56,22 @@ class VoiceGen(LightningModule):
             ignore_index=cfg.data.codec_pad,
         )
         self.example_input_array = (
-            torch.randint(0, VOCAB_SIZE, (8, 128)),
-            torch.randint(0, cfg.data.codec_sos, (8, cfg.data.codec_channels, 1024)),
-            torch.randint(64, 128, (8,)),
-            torch.randint(512, 1024, (8,)),
+            torch.randint(0, VOCAB_SIZE, (cfg.train.batch_size, cfg.data.max_text_len)),
+            torch.randint(
+                0,
+                cfg.data.codec_sos,
+                (cfg.train.batch_size, cfg.data.codec_channels, cfg.data.max_codec_len),
+            ),
+            torch.randint(
+                cfg.data.max_text_len // 2,
+                cfg.data.max_text_len,
+                (cfg.train.batch_size,),
+            ),
+            torch.randint(
+                cfg.data.max_codec_len // 2,
+                cfg.data.max_codec_len,
+                (cfg.train.batch_size,),
+            ),
         )
         self.register_buffer(
             "sample_text",
@@ -66,11 +85,12 @@ class VoiceGen(LightningModule):
         self.sample_text_len: Tensor
         self.max_infer_len = 1000
 
-    def parse_batch(self, batch: CollatedBatch):
-        text = batch.text.to(self.device)
-        audio = batch.audio.to(self.device)
-        text_len = batch.text_len.to(self.device)
-        audio_len = batch.audio_len.to(self.device)
+    def parse_batch(self, batch: tuple[Tensor, Tensor, Tensor, Tensor]):
+        text, text_len, audio, audio_len = batch
+        text = text.to(self.device)
+        text_len = text_len.to(self.device)
+        audio = audio.to(self.device)
+        audio_len = audio_len.to(self.device)
         return text, text_len, audio, audio_len
 
     def forward(
@@ -109,11 +129,8 @@ class VoiceGen(LightningModule):
         concat_text_len = text_len + 1 + enrolled_text_len
         audio = torch.empty_like(enrolled_audio)[:, :, :0]
         audio_len = torch.zeros_like(enrolled_audio_len)
-        delayed_enrolled_audio, delayed_enrolled_audio_len = self.delay_audio(
-            enrolled_audio, enrolled_audio_len
-        )
-        enrolled_audio = delayed_enrolled_audio[:, :, : -self.codec_channels]
-        enrolled_audio_len = delayed_enrolled_audio_len - self.codec_channels
+        delayed_enrolled_audio, _ = self.delay_audio(enrolled_audio, enrolled_audio_len)
+        enrolled_audio = delayed_enrolled_audio[:, :, : enrolled_audio_len.max().item()]
         for _ in tqdm(range(self.max_infer_len), leave=False):
             logits = self.delayed_transformer(
                 concat_text,
@@ -122,21 +139,28 @@ class VoiceGen(LightningModule):
                 enrolled_audio_len + audio_len,
             )[:, :, -1]
             sampled_token = nucleus_sample(logits, top_p=0.9)
-            if torch.all(sampled_token == self.codec_eos):
-                break
             audio = torch.cat([audio, sampled_token], dim=-1)
             audio_len += 1
+            if torch.all(sampled_token == self.codec_eos):
+                break
 
         audio, _ = self.delay_audio.remove_delay(audio, audio_len)
         audio = audio.clamp_max(self.cfg.data.codec_sos - 1)
         return audio
 
     def single_step(
-        self, batch: CollatedBatch, mode: Literal["train", "val", "test"]
+        self,
+        batch: tuple[Tensor, Tensor, Tensor, Tensor],
+        mode: Literal["train", "val", "test"],
     ) -> Tensor:
         (text, text_len, audio, audio_len) = self.parse_batch(batch)
         delayed_audio, delayed_audio_len = self.delay_audio(audio, audio_len)
-        delayed_audio_len = delayed_audio_len.clamp_max(delayed_audio_len.max() - 1)
+        delayed_audio = nn.functional.pad(
+            delayed_audio,
+            (0, self.cfg.data.max_codec_len - delayed_audio.shape[2] + 1),
+            mode="constant",
+            value=self.cfg.data.codec_pad,
+        )
         output = self(text, delayed_audio[:, :, :-1], text_len, delayed_audio_len)
         loss = self.loss(output.permute(0, 3, 1, 2), delayed_audio[:, :, 1:])
         self.acc(output.permute(0, 3, 1, 2), delayed_audio[:, :, 1:])
@@ -148,16 +172,20 @@ class VoiceGen(LightningModule):
             self.log(f"{mode}/acc", self.acc, on_epoch=True, sync_dist=True)
         return loss
 
-    def training_step(self, batch: CollatedBatch, batch_idx: int) -> Tensor:
+    def training_step(
+        self, batch: tuple[Tensor, Tensor, Tensor, Tensor], batch_idx: int
+    ) -> Tensor:
         loss = self.single_step(batch, "train")
         return loss
 
-    def validation_step(self, batch: CollatedBatch, batch_idx: int):
+    def validation_step(
+        self, batch: tuple[Tensor, Tensor, Tensor, Tensor], batch_idx: int
+    ):
         self.single_step(batch, "val")
         if batch_idx == 0 and self.device.index == 0:
             self.log_table(batch, "val")
 
-    def test_step(self, batch: CollatedBatch, batch_idx: int):
+    def test_step(self, batch: tuple[Tensor, Tensor, Tensor, Tensor], batch_idx: int):
         self.single_step(batch, "test")
         if batch_idx == 0 and self.device.index == 0:
             self.log_table(batch, "test")
@@ -239,11 +267,13 @@ class VoiceGen(LightningModule):
         else:
             raise NotImplementedError(f"Unknown scheduler {self.cfg.train.scheduler}")
 
-    def log_table(self, batch: CollatedBatch, mode: Literal["val", "test"]):
+    def log_table(
+        self, batch: tuple[Tensor, Tensor, Tensor, Tensor], mode: Literal["val", "test"]
+    ):
         (text, text_len, audio, audio_len) = self.parse_batch(batch)
         longest_audio_index = audio_len.argmax().item()
         longest_audio_len = audio_len[[longest_audio_index]]
-        longest_audio = audio[[longest_audio_index], :longest_audio_len]
+        longest_audio = audio[[longest_audio_index], :, :longest_audio_len]
         longest_text_len = text_len[[longest_audio_index]]
         longest_text = text[[longest_audio_index], :longest_text_len]
         with torch.no_grad():

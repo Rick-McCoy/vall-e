@@ -12,3 +12,15 @@ class Config:
     train: TrainConfig = field(default_factory=TrainConfig)
 
     name: str = "default"
+
+
+def dict_to_config(cfg: dict):
+    model_config = ModelConfig(**cfg["model"])
+    data_config = DataConfig(**cfg["data"])
+    train_config = TrainConfig(**cfg["train"])
+    return Config(
+        model=model_config,
+        data=data_config,
+        train=train_config,
+        name=cfg["name"],
+    )

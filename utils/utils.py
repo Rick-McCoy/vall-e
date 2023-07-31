@@ -34,7 +34,6 @@ def unpad_sequence(
     """
 
     assert padded_sequences.shape[0] == lengths.shape[0]
-    assert padded_sequences.shape[1] == lengths.max()
     unpadded_sequences: list[Tensor] = []
 
     if not batch_first:

@@ -107,11 +107,11 @@ class DelayAudio(nn.Module):
                 for audio_item in split_audio
             ]
             audio_len = audio_len - self.n_channels
-            return (
-                torch.nn.utils.rnn.pad_sequence(
-                    [unpad_audio_item.T for unpad_audio_item in unpad_audio],
-                    batch_first=True,
-                    padding_value=self.audio_pad,
-                ).transpose(1, 2),
-                audio_len,
-            )
+
+            padded_audio = torch.nn.utils.rnn.pad_sequence(
+                [unpad_audio_item.T for unpad_audio_item in unpad_audio],
+                batch_first=True,
+                padding_value=self.audio_pad,
+            ).transpose(1, 2)
+
+            return padded_audio, audio_len
