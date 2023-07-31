@@ -10,8 +10,6 @@ class DelayedTransformer(nn.Module):
     def __init__(self, cfg: Config):
         super().__init__()
         self.n_channels = cfg.data.codec_channels
-        self.max_audio_len = cfg.data.max_codec_len
-        self.max_text_len = cfg.data.max_text_len
         self.text_embedding = nn.Embedding(
             num_embeddings=VOCAB_SIZE,
             embedding_dim=cfg.model.hidden_dim,
@@ -58,15 +56,17 @@ class DelayedTransformer(nn.Module):
                 dim=1,
             ).sum(dim=1)
         )
+        max_audio_len = audio_embedding.shape[1]
+        max_text_len = text_embedding.shape[1]
         tgt_mask = torch.ones(
-            (self.max_audio_len, self.max_audio_len),
+            (max_audio_len, max_audio_len),
             dtype=torch.bool,
             device=audio_len.device,
         ).triu(diagonal=1)
-        src_key_padding_mask = torch.arange(self.max_text_len).to(
-            text_len.device
-        ).unsqueeze(0) >= text_len.unsqueeze(1)
-        tgt_key_padding_mask = torch.arange(self.max_audio_len).to(
+        src_key_padding_mask = torch.arange(max_text_len).to(text_len.device).unsqueeze(
+            0
+        ) >= text_len.unsqueeze(1)
+        tgt_key_padding_mask = torch.arange(max_audio_len).to(
             audio_len.device
         ).unsqueeze(0) >= audio_len.unsqueeze(1)
         transformer_output = self.transformer(

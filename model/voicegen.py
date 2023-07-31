@@ -126,7 +126,7 @@ class VoiceGen(LightningModule):
             batch_first=True,
             padding_value=self.text_pad,
         )
-        concat_text_len = text_len + 1 + enrolled_text_len
+        concat_text_len = text_len + enrolled_text_len
         audio = torch.empty_like(enrolled_audio)[:, :, :0]
         audio_len = torch.zeros_like(enrolled_audio_len)
         delayed_enrolled_audio, _ = self.delay_audio(enrolled_audio, enrolled_audio_len)
