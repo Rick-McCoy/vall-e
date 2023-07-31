@@ -23,6 +23,7 @@ class MusicGenDataset(Dataset):
         )
         self.length = len(self.speaker_list)
         self.speaker_to_indices = self.group_by_speaker()
+        self.max_audio_len = cfg.data.max_codec_len + 1
 
     def __len__(self) -> int:
         return self.length
@@ -57,15 +58,12 @@ class MusicGenDataset(Dataset):
         elif codec.shape[0] > self.cfg.data.codec_channels:
             codec = codec[: self.cfg.data.codec_channels]
 
-        if codec_len > self.cfg.data.max_codec_len:
-            raise ValueError(
-                f"Audio file at {codec_path} has {codec_len} samples, "
-                f"but at most {self.cfg.data.max_codec_len} samples were expected."
-            )
+        if codec_len > self.max_audio_len:
+            codec = codec[:, : self.max_audio_len]
         else:
             codec = np.pad(
                 codec,
-                ((0, 0), (0, self.cfg.data.max_codec_len - codec_len)),
+                ((0, 0), (0, self.max_audio_len - codec_len)),
                 mode="constant",
                 constant_values=self.cfg.data.codec_pad,
             )
