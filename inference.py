@@ -80,7 +80,7 @@ def main(
         raw_audio = codec_to_audio(generated_audio, encodec_model)
         raw_audio_numpy = raw_audio.squeeze(0).cpu().numpy()
 
-        save_audio(Path("generated.wav"), raw_audio_numpy, 24000)
+        save_audio(Path("generated.wav"), raw_audio_numpy, cfg.data.sample_rate)
 
 
 if __name__ == "__main__":
