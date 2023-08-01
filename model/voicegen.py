@@ -96,39 +96,39 @@ class VoiceGen(LightningModule):
     def inference(
         self,
         text: Tensor,
-        enrolled_text: Tensor,
-        enrolled_audio: Tensor,
+        target_text: Tensor,
+        target_audio: Tensor,
         text_len: Tensor,
-        enrolled_text_len: Tensor,
-        enrolled_audio_len: Tensor,
+        target_text_len: Tensor,
+        target_audio_len: Tensor,
     ) -> Tensor:
         assert len(text) == 1, "Inference only supports batch size 1"
         unpad_text = unpad_sequence(text, text_len, batch_first=True)
-        unpad_enrolled_text = unpad_sequence(
-            enrolled_text, enrolled_text_len, batch_first=True
+        unpad_target_text = unpad_sequence(
+            target_text, target_text_len, batch_first=True
         )
         concat_text = torch.nn.utils.rnn.pad_sequence(
             [
-                torch.cat([unpad_enrolled_text_item, unpad_text_item])
-                for unpad_text_item, unpad_enrolled_text_item in zip(
-                    unpad_text, unpad_enrolled_text
+                torch.cat([unpad_target_text_item, unpad_text_item])
+                for unpad_text_item, unpad_target_text_item in zip(
+                    unpad_text, unpad_target_text
                 )
             ],
             batch_first=True,
             padding_value=self.text_pad,
         )
-        concat_text_len = text_len + enrolled_text_len
-        audio = torch.empty_like(enrolled_audio)[:, :, :0]
-        audio_len = torch.zeros_like(enrolled_audio_len)
-        enrolled_audio = enrolled_audio[
-            :, :, : enrolled_audio_len.max().item() - self.codec_channels
+        concat_text_len = text_len + target_text_len
+        audio = torch.empty_like(target_audio)[:, :, :0]
+        audio_len = torch.zeros_like(target_audio_len)
+        target_audio = target_audio[
+            :, :, : target_audio_len.max().item() - self.codec_channels
         ]
         for _ in tqdm(range(self.max_infer_len), leave=False):
             logits = self.delayed_transformer(
                 concat_text,
-                torch.cat([enrolled_audio, audio], dim=-1),
+                torch.cat([target_audio, audio], dim=-1),
                 concat_text_len,
-                enrolled_audio_len + audio_len,
+                target_audio_len + audio_len,
             )[:, :, -1]
             sampled_token = nucleus_sample(logits, top_p=0.9).unsqueeze(-1)
             audio = torch.cat([audio, sampled_token], dim=-1)
@@ -275,11 +275,11 @@ class VoiceGen(LightningModule):
             pred = pred.clamp_max(self.cfg.data.codec_sos - 1)
             gen: Tensor = self.inference(
                 text=self.sample_text,
-                enrolled_text=longest_text,
-                enrolled_audio=longest_audio,
+                target_text=longest_text,
+                target_audio=longest_audio,
                 text_len=self.sample_text_len,
-                enrolled_text_len=longest_text_len,
-                enrolled_audio_len=longest_audio_len,
+                target_text_len=longest_text_len,
+                target_audio_len=longest_audio_len,
             )
             longest_audio = remove_delay(
                 longest_audio, longest_audio_len, self.codec_channels, self.codec_pad

@@ -14,7 +14,6 @@ class MusicGenDataset(Dataset):
     def __init__(self, cfg: Config, mode: Literal["train_val"] | Literal["test"]):
         super().__init__()
         self.cfg = cfg
-        self.rng = np.random.default_rng()
         self.speaker_list, self.text_list, self.codec_path_list = load_metadata(
             cfg.data.path / f"{mode}.csv"
         )
@@ -79,14 +78,6 @@ class MusicGenDataset(Dataset):
         for i, speaker in enumerate(self.speaker_list):
             speaker_to_indices[speaker].append(i)
         return speaker_to_indices
-
-    def get_enrolled_codec_path(self, speaker: str, index: int):
-        """Returns a random audio path from the same speaker.
-        Excludes the audio path at the given index."""
-        indices = self.speaker_to_indices[speaker]
-        while (diff_index := self.rng.choice(indices)) == index:
-            pass
-        return self.codec_base_path / self.codec_path_list[diff_index]
 
     def delay_audio(self, audio: np.ndarray):
         delayed_audio = np.stack(

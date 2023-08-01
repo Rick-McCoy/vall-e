@@ -25,7 +25,6 @@ class DelayedTransformer(nn.Module):
                 for _ in range(self.n_channels)
             ]
         )
-        self.padding_idx = cfg.data.codec_pad
         self.positional_encoding = PositionalEncoding(
             d_model=cfg.model.hidden_dim, dropout=cfg.model.dropout
         )
