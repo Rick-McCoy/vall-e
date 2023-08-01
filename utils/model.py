@@ -33,7 +33,7 @@ def nucleus_sample(logits: Tensor, top_p: float = 0.9) -> Tensor:
     sorted_indices_to_remove[..., 0] = 0
     sorted_logits[sorted_indices_to_remove] = float("-inf")
     sample = torch.multinomial(
-        F.softmax(sorted_logits.view(-1, vocab_size), dim=-1), num_samples=1
+        F.softmax(sorted_logits.reshape(-1, vocab_size), dim=-1), num_samples=1
     )
-    sample = sample.view(*prefix_shape, 1)
-    return sorted_indices.gather(dim=-1, index=sample)
+    sample = sample.reshape(*prefix_shape, 1)
+    return sorted_indices.gather(dim=-1, index=sample).squeeze(-1)

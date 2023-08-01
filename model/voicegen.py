@@ -13,13 +13,12 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from config.config import Config, dict_to_config
-from model.delay_audio import DelayAudio
 from model.delayed_transformer import DelayedTransformer
 from utils.audio import codec_to_audio, mel_spectrogram
 from utils.data import plot_mel_spectrogram
 from utils.model import nucleus_sample
 from utils.text import CHAR_TO_CODE, VOCAB_SIZE, encode_text
-from utils.utils import unpad_sequence
+from utils.utils import remove_delay, unpad_sequence
 
 
 class VoiceGen(LightningModule):
@@ -46,8 +45,8 @@ class VoiceGen(LightningModule):
             ),
         )
         self.codec_eos: Tensor
+        self.codec_pad = float(cfg.data.codec_pad)
         self.lr = cfg.train.lr
-        self.delay_audio = DelayAudio(cfg)
         self.delayed_transformer = DelayedTransformer(cfg)
         self.loss = nn.CrossEntropyLoss(ignore_index=cfg.data.codec_pad)
         self.acc = MulticlassAccuracy(
@@ -85,14 +84,6 @@ class VoiceGen(LightningModule):
         self.sample_text_len: Tensor
         self.max_infer_len = 1000
 
-    def parse_batch(self, batch: tuple[Tensor, Tensor, Tensor, Tensor]):
-        text, text_len, audio, audio_len = batch
-        text = text.to(self.device)
-        text_len = text_len.to(self.device)
-        audio = audio.to(self.device)
-        audio_len = audio_len.to(self.device)
-        return text, text_len, audio, audio_len
-
     def forward(
         self,
         text: Tensor,
@@ -129,8 +120,9 @@ class VoiceGen(LightningModule):
         concat_text_len = text_len + enrolled_text_len
         audio = torch.empty_like(enrolled_audio)[:, :, :0]
         audio_len = torch.zeros_like(enrolled_audio_len)
-        delayed_enrolled_audio, _ = self.delay_audio(enrolled_audio, enrolled_audio_len)
-        enrolled_audio = delayed_enrolled_audio[:, :, : enrolled_audio_len.max().item()]
+        enrolled_audio = enrolled_audio[
+            :, :, : enrolled_audio_len.max().item() - self.codec_channels
+        ]
         for _ in tqdm(range(self.max_infer_len), leave=False):
             logits = self.delayed_transformer(
                 concat_text,
@@ -138,13 +130,13 @@ class VoiceGen(LightningModule):
                 concat_text_len,
                 enrolled_audio_len + audio_len,
             )[:, :, -1]
-            sampled_token = nucleus_sample(logits, top_p=0.9)
+            sampled_token = nucleus_sample(logits, top_p=0.9).unsqueeze(-1)
             audio = torch.cat([audio, sampled_token], dim=-1)
             audio_len += 1
             if torch.all(sampled_token == self.codec_eos):
                 break
 
-        audio, _ = self.delay_audio.remove_delay(audio, audio_len)
+        audio = remove_delay(audio, audio_len, self.codec_channels, self.codec_pad)
         audio = audio.clamp_max(self.cfg.data.codec_sos - 1)
         return audio
 
@@ -153,17 +145,10 @@ class VoiceGen(LightningModule):
         batch: tuple[Tensor, Tensor, Tensor, Tensor],
         mode: Literal["train", "val", "test"],
     ) -> Tensor:
-        (text, text_len, audio, audio_len) = self.parse_batch(batch)
-        delayed_audio, delayed_audio_len = self.delay_audio(audio, audio_len)
-        delayed_audio = nn.functional.pad(
-            delayed_audio,
-            (0, self.cfg.data.max_codec_len - delayed_audio.shape[2] + 1),
-            mode="constant",
-            value=self.cfg.data.codec_pad,
-        )
-        output = self(text, delayed_audio[:, :, :-1], text_len, delayed_audio_len)
-        loss = self.loss(output.permute(0, 3, 1, 2), delayed_audio[:, :, 1:])
-        self.acc(output.permute(0, 3, 1, 2), delayed_audio[:, :, 1:])
+        text, text_len, audio, audio_len = batch
+        output = self(text, audio[:, :, :-1], text_len, audio_len)
+        loss = self.loss(output.permute(0, 3, 1, 2), audio[:, :, 1:])
+        self.acc(output.permute(0, 3, 1, 2), audio[:, :, 1:])
         if mode == "train":
             self.log(f"{mode}/loss", loss, on_step=True)
             self.log(f"{mode}/acc", self.acc, on_step=True)
@@ -270,24 +255,22 @@ class VoiceGen(LightningModule):
     def log_table(
         self, batch: tuple[Tensor, Tensor, Tensor, Tensor], mode: Literal["val", "test"]
     ):
-        (text, text_len, audio, audio_len) = self.parse_batch(batch)
+        text, text_len, audio, audio_len = batch
         longest_audio_index = audio_len.argmax().item()
         longest_audio_len = audio_len[[longest_audio_index]]
         longest_audio = audio[[longest_audio_index], :, :longest_audio_len]
         longest_text_len = text_len[[longest_audio_index]]
         longest_text = text[[longest_audio_index], :longest_text_len]
         with torch.no_grad():
-            delayed_longest_audio, delayed_longest_audio_len = self.delay_audio(
-                longest_audio, longest_audio_len
+            pred = self(
+                longest_text,
+                longest_audio[:, :, :-1],
+                longest_text_len,
+                longest_audio_len - 1,
             )
-            pred, _ = self.delay_audio.remove_delay(
-                self(
-                    longest_text,
-                    delayed_longest_audio[:, :, :-1],
-                    longest_text_len,
-                    delayed_longest_audio_len - 1,
-                ).argmax(dim=-1),
-                delayed_longest_audio_len - 1,
+            pred_sample = nucleus_sample(pred)
+            pred = remove_delay(
+                pred_sample, longest_audio_len - 1, self.codec_channels, self.codec_pad
             )
             pred = pred.clamp_max(self.cfg.data.codec_sos - 1)
             gen: Tensor = self.inference(
@@ -298,6 +281,10 @@ class VoiceGen(LightningModule):
                 enrolled_text_len=longest_text_len,
                 enrolled_audio_len=longest_audio_len,
             )
+            longest_audio = remove_delay(
+                longest_audio, longest_audio_len, self.codec_channels, self.codec_pad
+            )
+
         if gen.shape[2] < 30:
             tqdm.write(f"Generated audio is too short, {gen.shape[2]} < 30")
             codec_list = [longest_audio, pred]

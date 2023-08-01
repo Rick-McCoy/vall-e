@@ -24,6 +24,12 @@ class MusicGenDataset(Dataset):
         self.length = len(self.speaker_list)
         self.speaker_to_indices = self.group_by_speaker()
         self.max_audio_len = cfg.data.max_codec_len + 1
+        self.audio_sos = np.full(
+            (cfg.data.codec_channels,), fill_value=cfg.data.codec_sos
+        )
+        self.audio_eos = np.full(
+            (cfg.data.codec_channels,), fill_value=cfg.data.codec_eos
+        )
 
     def __len__(self) -> int:
         return self.length
@@ -58,15 +64,12 @@ class MusicGenDataset(Dataset):
         elif codec.shape[0] > self.cfg.data.codec_channels:
             codec = codec[: self.cfg.data.codec_channels]
 
-        if codec_len > self.max_audio_len:
-            codec = codec[:, : self.max_audio_len]
-        else:
-            codec = np.pad(
-                codec,
-                ((0, 0), (0, self.max_audio_len - codec_len)),
-                mode="constant",
-                constant_values=self.cfg.data.codec_pad,
-            )
+        if codec_len > self.max_audio_len - self.cfg.data.codec_channels:
+            codec = codec[:, : self.max_audio_len - self.cfg.data.codec_channels]
+            codec_len = self.max_audio_len - self.cfg.data.codec_channels
+
+        codec = self.delay_audio(codec)
+        codec_len += self.cfg.data.codec_channels
 
         return encoded_text, text_len, codec, codec_len
 
@@ -84,3 +87,20 @@ class MusicGenDataset(Dataset):
         while (diff_index := self.rng.choice(indices)) == index:
             pass
         return self.codec_base_path / self.codec_path_list[diff_index]
+
+    def delay_audio(self, audio: np.ndarray):
+        delayed_audio = np.stack(
+            [
+                np.concatenate(
+                    [self.audio_sos[:i], audio[i], self.audio_eos[i:]], axis=0
+                )
+                for i in range(self.cfg.data.codec_channels)
+            ]
+        )
+        padded_audio = np.pad(
+            delayed_audio,
+            ((0, 0), (0, self.max_audio_len - audio.shape[1])),
+            mode="constant",
+            constant_values=self.cfg.data.codec_pad,
+        )
+        return padded_audio
