@@ -15,7 +15,7 @@ class MusicGenDataset(Dataset):
         super().__init__()
         self.cfg = cfg
         self.speaker_list, self.text_list, self.codec_path_list = load_metadata(
-            cfg.data.path / f"{mode}.csv"
+            cfg.data.path / f"{mode}_filtered.csv"
         )
         self.codec_base_path = (
             cfg.data.path / ("train" if mode == "train_val" else "val") / "codec"
@@ -64,8 +64,11 @@ class MusicGenDataset(Dataset):
             codec = codec[: self.cfg.data.codec_channels]
 
         if codec_len > self.max_audio_len - self.cfg.data.codec_channels:
-            codec = codec[:, : self.max_audio_len - self.cfg.data.codec_channels]
-            codec_len = self.max_audio_len - self.cfg.data.codec_channels
+            raise ValueError(
+                f"Audio file at {codec_path} has {codec_len} samples, "
+                f"but at most {self.max_audio_len - self.cfg.data.codec_channels} "
+                "samples were expected."
+            )
 
         codec = self.delay_audio(codec)
         codec_len += self.cfg.data.codec_channels
