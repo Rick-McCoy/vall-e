@@ -138,7 +138,7 @@ def main(cfg: Config):
     remove_norm(compiled_model)
     save_path = Path("model-store")
     save_path.mkdir(exist_ok=True)
-    compiled_model.to_torchscript(save_path / "model.pt")
+    # compiled_model.to_torchscript(save_path / "model.pt")
 
 
 if __name__ == "__main__":

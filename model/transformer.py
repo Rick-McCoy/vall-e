@@ -16,7 +16,7 @@ def _get_activation_fn(activation: str) -> Callable[[Tensor], Tensor]:
 
 
 class TransformerEncoderLayer(nn.Module):
-    __constants__ = ["batch_first", "norm_first"]
+    __constants__ = ["norm_first"]
 
     def __init__(
         self,
@@ -125,7 +125,7 @@ class TransformerEncoderLayer(nn.Module):
 
 
 class TransformerDecoderLayer(nn.Module):
-    __constants__ = ["batch_first", "norm_first"]
+    __constants__ = ["norm_first"]
 
     def __init__(
         self,
@@ -272,8 +272,6 @@ class TransformerDecoderLayer(nn.Module):
 
 
 class TransformerEncoder(nn.Module):
-    __constants__ = ["norm"]
-
     def __init__(
         self,
         encoder_layer,
@@ -348,7 +346,6 @@ class TransformerDecoder(nn.Module):
         >>> tgt = torch.rand(20, 32, 512)
         >>> out = transformer_decoder(tgt, memory)
     """
-    __constants__ = ["norm"]
 
     def __init__(self, decoder_layer, num_layers, norm=None):
         super().__init__()
