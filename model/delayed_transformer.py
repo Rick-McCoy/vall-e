@@ -3,6 +3,7 @@ from torch import Tensor, nn
 
 from config.config import Config
 from model.positional_encoding import PositionalEncoding
+from model.transformer import Transformer
 from utils.text import CHAR_TO_CODE, VOCAB_SIZE
 
 
@@ -28,7 +29,7 @@ class DelayedTransformer(nn.Module):
         self.positional_encoding = PositionalEncoding(
             d_model=cfg.model.hidden_dim, dropout=cfg.model.dropout
         )
-        self.transformer = nn.Transformer(
+        self.transformer = Transformer(
             d_model=cfg.model.hidden_dim,
             nhead=cfg.model.nhead,
             num_encoder_layers=cfg.model.num_layers,
@@ -37,10 +38,11 @@ class DelayedTransformer(nn.Module):
             dropout=cfg.model.dropout,
             batch_first=True,
             norm_first=True,
+            bias_ff=False,
+            bias_attn=False,
         )
-        self.norm = nn.LayerNorm(cfg.model.hidden_dim)
         self.linear = nn.Linear(
-            cfg.model.hidden_dim, cfg.data.codec_num * self.n_channels
+            cfg.model.hidden_dim, cfg.data.codec_num * self.n_channels, bias=False
         )
 
     def forward(self, text: Tensor, audio: Tensor, text_len: Tensor, audio_len: Tensor):
@@ -75,7 +77,6 @@ class DelayedTransformer(nn.Module):
             src_key_padding_mask=src_key_padding_mask,
             tgt_key_padding_mask=tgt_key_padding_mask,
         )
-        transformer_output = self.norm(transformer_output)
         output = (
             self.linear(transformer_output)
             .reshape(batch_size, length, self.n_channels, -1)

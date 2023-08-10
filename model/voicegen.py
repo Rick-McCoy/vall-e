@@ -273,7 +273,7 @@ class VoiceGen(LightningModule):
                 pred_sample, longest_audio_len - 1, self.codec_channels, self.codec_pad
             )
             pred = pred.clamp_max(self.cfg.data.codec_sos - 1)
-            gen: Tensor = self.inference(
+            gen = self.inference(
                 text=self.sample_text,
                 target_text=longest_text,
                 target_audio=longest_audio,
