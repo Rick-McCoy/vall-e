@@ -36,6 +36,7 @@ class DelayedTransformer(nn.Module):
             num_decoder_layers=cfg.model.num_layers,
             dim_feedforward=cfg.model.dim_feedforward,
             dropout=cfg.model.dropout,
+            activation=torch.nn.functional.gelu,
             batch_first=True,
             norm_first=True,
             bias_ff=False,
