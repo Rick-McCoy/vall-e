@@ -6,7 +6,6 @@ from typing import Optional
 class TrainConfig:
     acc: int = 1
     batch_size: int = 64
-    checkpoint: bool = True
     checkpoint_path: Optional[str] = None
     early_stop: bool = True
     fast_dev_run: bool = False

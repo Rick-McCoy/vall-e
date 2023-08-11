@@ -120,9 +120,8 @@ class VoiceGen(LightningModule):
         concat_text_len = text_len + target_text_len
         audio = torch.empty_like(target_audio)[:, :, :0]
         audio_len = torch.zeros_like(target_audio_len)
-        target_audio = target_audio[
-            :, :, : target_audio_len.max().item() - self.codec_channels
-        ]
+        target_audio_len -= self.codec_channels
+        target_audio = target_audio[:, :, : target_audio_len.max().item()]
         for _ in tqdm(range(self.max_infer_len), leave=False):
             logits = self.delayed_transformer(
                 concat_text,

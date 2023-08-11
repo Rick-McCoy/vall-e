@@ -39,38 +39,33 @@ def main(cfg: Config):
     compiled_model = cast(VoiceGen, torch.compile(model, disable=True))
     datamodule = VoiceGenDataModule(cfg)
 
+    callbacks = []
+    checkpoint_dir = Path("checkpoints")
+
     Path("logs").mkdir(exist_ok=True)
     if cfg.train.fast_dev_run:
         logger = None
+        checkpoint_dir /= "fast_dev_run"
     elif cfg.train.wandb:
         logger = WandbLogger(project=cfg.train.project, save_dir="logs")
-    else:
-        logger = TensorBoardLogger(save_dir="logs", name=cfg.train.project)
-
-    callbacks = []
-
-    if cfg.train.checkpoint:
-        checkpoint_dir = Path("checkpoints")
         if wandb.run is not None:
             checkpoint_dir /= wandb.run.name
-        elif (
-            isinstance(logger, WandbLogger)
-            and not isinstance(logger.experiment.name, str)
-            and logger.experiment.name() is not None
-        ):
-            checkpoint_dir /= logger.experiment.name()
         else:
-            checkpoint_dir /= time.strftime("%Y-%m-%d_%H-%M-%S")
-        callbacks.append(
-            ModelCheckpoint(
-                dirpath=checkpoint_dir,
-                filename="{epoch:03d}-val_loss={val/loss:.4f}",
-                monitor="val/loss",
-                save_top_k=3,
-                mode="min",
-                auto_insert_metric_name=False,
-            )
+            checkpoint_dir /= logger.experiment.name()
+    else:
+        logger = TensorBoardLogger(save_dir="logs", name=cfg.train.project)
+        checkpoint_dir /= time.strftime("%Y-%m-%d_%H-%M-%S")
+
+    callbacks.append(
+        ModelCheckpoint(
+            dirpath=checkpoint_dir,
+            filename="{epoch:03d}-val_loss={val/loss:.4f}",
+            monitor="val/loss",
+            save_top_k=3,
+            mode="min",
+            auto_insert_metric_name=False,
         )
+    )
 
     if cfg.train.monitor:
         callbacks.append(DeviceStatsMonitor())
@@ -86,6 +81,11 @@ def main(cfg: Config):
             )
         )
 
+    if cfg.train.scheduler != "None":
+        callbacks.append(
+            LearningRateMonitor(logging_interval="step", log_momentum=False)
+        )
+
     if cfg.train.weight_average:
 
         def avg_fn(
@@ -97,16 +97,12 @@ def main(cfg: Config):
 
         callbacks.append(
             StochasticWeightAveraging(
-                swa_lrs=cfg.train.lr,
+                swa_lrs=cfg.train.lr / 10,
                 swa_epoch_start=0.5,
-                annealing_epochs=100,
+                annealing_epochs=10,
+                annealing_strategy="cos",
                 avg_fn=avg_fn,
             )
-        )
-
-    if cfg.train.scheduler != "None":
-        callbacks.append(
-            LearningRateMonitor(logging_interval="step", log_momentum=False)
         )
 
     if torch.cuda.is_available():
