@@ -43,13 +43,12 @@ def main(cfg: Config):
     checkpoint_dir = Path("checkpoints")
 
     Path("logs").mkdir(exist_ok=True)
-    if cfg.train.fast_dev_run:
-        logger = None
-        checkpoint_dir /= "fast_dev_run"
-    elif cfg.train.wandb:
+    if cfg.train.wandb:
         logger = WandbLogger(project=cfg.train.project, save_dir="logs")
         if wandb.run is not None:
             checkpoint_dir /= wandb.run.name
+        elif isinstance(logger.experiment.name, str):
+            checkpoint_dir /= logger.experiment.name
         else:
             checkpoint_dir /= logger.experiment.name()
     else:
