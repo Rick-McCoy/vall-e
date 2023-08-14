@@ -46,14 +46,16 @@ def main(cfg: Config):
     if cfg.train.wandb:
         logger = WandbLogger(project=cfg.train.project, save_dir="logs")
         if wandb.run is not None:
-            checkpoint_dir /= wandb.run.name
+            run_name = wandb.run.name
         elif isinstance(logger.experiment.name, str):
-            checkpoint_dir /= logger.experiment.name
+            run_name = logger.experiment.name
         else:
-            checkpoint_dir /= logger.experiment.name()
+            run_name = logger.experiment.name()
     else:
         logger = TensorBoardLogger(save_dir="logs", name=cfg.train.project)
-        checkpoint_dir /= time.strftime("%Y-%m-%d_%H-%M-%S")
+        run_name = time.strftime("%Y-%m-%d_%H-%M-%S")
+
+    checkpoint_dir /= str(run_name)
 
     callbacks.append(
         ModelCheckpoint(
