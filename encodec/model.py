@@ -45,7 +45,7 @@ class EncodecModel(nn.Module):
         sample_rate: int,
         channels: int,
         normalize: bool = False,
-        segment: Optional[float] = None,
+        segment: float | None = None,
         overlap: float = 0.01,
         name: str = "unset",
     ):
@@ -173,7 +173,7 @@ class EncodecModel(nn.Module):
         causal: bool = True,
         model_norm: str = "weight_norm",
         audio_normalize: bool = False,
-        segment: Optional[float] = None,
+        segment: float | None = None,
         name: str = "unset",
     ):
         encoder = SEANetEncoder(channels=channels, norm=model_norm, causal=causal)
@@ -202,7 +202,7 @@ class EncodecModel(nn.Module):
         return model
 
     @staticmethod
-    def _get_pretrained(checkpoint_name: str, repository: Optional[Path] = None):
+    def _get_pretrained(checkpoint_name: str, repository: Path | None = None):
         if repository is not None:
             if not repository.is_dir():
                 raise ValueError(f"{repository} must exist and be a directory.")
@@ -217,7 +217,7 @@ class EncodecModel(nn.Module):
             )
 
     @staticmethod
-    def encodec_model_24khz(pretrained: bool = True, repository: Optional[Path] = None):
+    def encodec_model_24khz(pretrained: bool = True, repository: Path | None = None):
         """Return the pretrained causal 24khz model."""
         if repository:
             assert pretrained
@@ -241,7 +241,7 @@ class EncodecModel(nn.Module):
         return model
 
     @staticmethod
-    def encodec_model_48khz(pretrained: bool = True, repository: Optional[Path] = None):
+    def encodec_model_48khz(pretrained: bool = True, repository: Path | None = None):
         """Return the pretrained 48khz model."""
         if repository:
             assert pretrained

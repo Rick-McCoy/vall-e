@@ -34,8 +34,8 @@
 from typing import Optional, cast
 
 import torch
-import torch.nn.functional as F
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 
 def uniform_init(*shape: int):

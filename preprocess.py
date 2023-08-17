@@ -1,7 +1,7 @@
 import json
 from math import ceil
 from pathlib import Path
-from typing import Iterable, Literal, Optional, cast
+from typing import Iterable, Literal, cast
 
 import hydra
 import numpy as np
@@ -95,7 +95,7 @@ class PreprocessDataset(Dataset):
         )
 
 
-def collate_fn(batch: list[Optional[tuple[Tensor, Path, str, str]]]):
+def collate_fn(batch: list[tuple[Tensor, Path, str, str] | None]):
     filtered_batch = [x for x in batch if x is not None]
     return (
         torch.nn.utils.rnn.pad_sequence(

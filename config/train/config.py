@@ -1,12 +1,11 @@
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class TrainConfig:
     acc: int = 1
     batch_size: int = 64
-    checkpoint_path: Optional[str] = None
+    checkpoint_path: str | None = None
     early_stop: bool = True
     fast_dev_run: bool = False
     lr: float = 5e-4

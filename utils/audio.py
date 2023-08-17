@@ -1,12 +1,13 @@
 from pathlib import Path
-from typing import Optional, cast
+from typing import cast
 
 import librosa
 import numpy as np
 import soundfile as sf
 import torch
 from torch import Tensor
-from torchaudio.transforms import MelSpectrogram, Resample
+from torch.nn import functional as F
+from torchaudio.transforms import MelSpectrogram
 
 from encodec.model import EncodecModel
 from encodec.modules.lstm import SLSTM
@@ -28,8 +29,7 @@ def load_audio(path: Path, target_sr: int, channels: int) -> np.ndarray:
     audio, sr = sf.read(path, always_2d=True, dtype="float32")
     audio = audio.T
     if sr != target_sr:
-        resampler = Resample(orig_freq=sr, new_freq=target_sr)
-        audio = resampler(torch.from_numpy(audio)).numpy()
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
     if audio.shape[0] == 1 and channels == 2:
         audio = np.repeat(audio, 2, axis=0)
     elif audio.shape[0] == 2 and channels == 1:
@@ -95,16 +95,16 @@ def get_encodec_model(sample_rate: int, device: torch.device) -> EncodecModel:
 
 def audio_to_codec(
     audio: Tensor,
-    encodec_model: Optional[EncodecModel],
-    sample_rate: Optional[int] = None,
+    encodec_model: EncodecModel | None,
+    sample_rate: int | None = None,
 ) -> Tensor:
     """Encodes audio to a codec tensor.
 
     Args:
         audio (Tensor): Audio tensor. Shape: (batch, channels, samples)
-        encodec_model (Optional[EncodecModel]): Encodec model to use for encoding.
+        encodec_model (EncodecModel | None): Encodec model to use for encoding.
         If None, uses the sample_rate argument to create a new model.
-        sample_rate (Optional[int]): Sample rate to use for creating a new model.
+        sample_rate (int | None): Sample rate to use for creating a new model.
 
     Returns:
         codec (Tensor): Codec tensor.
@@ -123,16 +123,16 @@ def audio_to_codec(
 
 def codec_to_audio(
     codec: Tensor,
-    encodec_model: Optional[EncodecModel] = None,
-    sample_rate: Optional[int] = None,
+    encodec_model: EncodecModel | None = None,
+    sample_rate: int | None = None,
 ) -> Tensor:
     """Decodes a codec tensor to audio.
 
     Args:
         codec (Tensor): Codec tensor. Shape: (batch, 8, codec_samples)
-        encodec_model (Optional[EncodecModel]): Encodec model to use for decoding.
+        encodec_model (EncodecModel | None): Encodec model to use for decoding.
         If None, uses the sample_rate argument to create a new model.
-        sample_rate (Optional[int]): Sample rate to use for creating a new model.
+        sample_rate (int | None): Sample rate to use for creating a new model.
 
     Returns:
         audio (Tensor): Audio tensor.
@@ -150,10 +150,10 @@ def codec_to_audio(
 
     with torch.no_grad():
         if encodec_model.segment is None:
-            frames: list[tuple[Tensor, Optional[Tensor]]] = [(codec, None)]
+            frames: list[tuple[Tensor, Tensor | None]] = [(codec, None)]
         else:
             segments = torch.split(codec, 150, dim=-1)
-            frames: list[tuple[Tensor, Optional[Tensor]]] = [
+            frames: list[tuple[Tensor, Tensor | None]] = [
                 (segment, None) for segment in segments
             ]
         return encodec_model.decode(frames)
@@ -167,7 +167,7 @@ def mel_spectrogram(
     hop_size: int,
     win_size: int,
     fmin: float,
-    fmax: Optional[float] = None,
+    fmax: float | None = None,
     center=False,
 ) -> Tensor:
     with torch.no_grad():
@@ -184,7 +184,7 @@ def mel_spectrogram(
             center=center,
         ).to(audio.device)
         pad_size = (n_fft - hop_size) // 2
-        audio = torch.nn.functional.pad(audio, (pad_size, pad_size), "reflect")
+        audio = F.pad(audio, (pad_size, pad_size), "reflect")
         mel_spec = transform(audio)
         mel_spec = torch.log(torch.clamp(mel_spec, min=1e-5))
         return mel_spec

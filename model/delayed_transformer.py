@@ -1,5 +1,6 @@
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 from config.config import Config
 from model.positional_encoding import PositionalEncoding
@@ -36,7 +37,7 @@ class DelayedTransformer(nn.Module):
             num_decoder_layers=cfg.model.num_layers,
             dim_feedforward=cfg.model.dim_feedforward,
             dropout=cfg.model.dropout,
-            activation=torch.nn.functional.gelu,
+            activation=F.gelu,
             batch_first=True,
             norm_first=True,
             bias_ff=False,
@@ -60,17 +61,24 @@ class DelayedTransformer(nn.Module):
         )
         max_audio_len = audio_embedding.shape[1]
         max_text_len = text_embedding.shape[1]
-        tgt_mask = torch.ones(
+        tgt_mask = torch.full(
             (max_audio_len, max_audio_len),
-            dtype=torch.bool,
-            device=audio_len.device,
+            float("-inf"),
+            dtype=audio_embedding.dtype,
+            device=audio_embedding.device,
         ).triu(diagonal=1)
         src_key_padding_mask = torch.arange(max_text_len).to(text_len.device).unsqueeze(
             0
         ) >= text_len.unsqueeze(1)
+        src_key_padding_mask = torch.zeros_like(
+            src_key_padding_mask, dtype=text_embedding.dtype
+        ).masked_fill(src_key_padding_mask, float("-inf"))
         tgt_key_padding_mask = torch.arange(max_audio_len).to(
             audio_len.device
         ).unsqueeze(0) >= audio_len.unsqueeze(1)
+        tgt_key_padding_mask = torch.zeros_like(
+            tgt_key_padding_mask, dtype=audio_embedding.dtype
+        ).masked_fill(tgt_key_padding_mask, float("-inf"))
         transformer_output = self.transformer(
             text_embedding,
             audio_embedding,

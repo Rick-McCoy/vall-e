@@ -1,5 +1,3 @@
-from typing import Optional
-
 from lightning import LightningDataModule
 from torch.utils.data import random_split
 from torch.utils.data.dataloader import DataLoader
@@ -17,7 +15,7 @@ class VoiceGenDataModule(LightningDataModule):
     def prepare_data(self) -> None:
         pass
 
-    def setup(self, stage: Optional[str] = None) -> None:
+    def setup(self, stage: str | None = None) -> None:
         if stage == "fit" or stage == "validate" or stage is None:
             train_val_dataset = MusicGenDataset(self.cfg, "train_val")
             train_val_size = len(train_val_dataset)

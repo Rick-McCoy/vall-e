@@ -145,7 +145,7 @@ class VoiceGen(LightningModule):
         mode: Literal["train", "val", "test"],
     ) -> Tensor:
         text, text_len, audio, audio_len = batch
-        output = self(text, audio[:, :, :-1], text_len, audio_len)
+        output = self.delayed_transformer(text, audio[:, :, :-1], text_len, audio_len)
         loss = self.loss(output.permute(0, 3, 1, 2), audio[:, :, 1:])
         self.acc(output.permute(0, 3, 1, 2), audio[:, :, 1:])
         if mode == "train":
@@ -261,7 +261,7 @@ class VoiceGen(LightningModule):
         longest_text_len = text_len[[longest_audio_index]]
         longest_text = text[[longest_audio_index], :longest_text_len]
         with torch.no_grad():
-            pred = self(
+            pred = self.delayed_transformer(
                 longest_text,
                 longest_audio[:, :, :-1],
                 longest_text_len,
