@@ -74,7 +74,7 @@ class VoiceGen(LightningModule):
         )
         self.register_buffer(
             "sample_text",
-            torch.from_numpy(encode_text(self.cfg.data.sample_sentence)).unsqueeze(0),
+            torch.from_numpy(encode_text(cfg.data.sample_sentence)).unsqueeze(0),
         )
         self.sample_text: Tensor
         self.register_buffer(
@@ -82,7 +82,7 @@ class VoiceGen(LightningModule):
             torch.tensor([self.sample_text.shape[1]]),
         )
         self.sample_text_len: Tensor
-        self.max_infer_len = 1000
+        self.max_infer_len = cfg.data.max_codec_len - self.codec_channels
 
     def forward(
         self,
@@ -255,40 +255,40 @@ class VoiceGen(LightningModule):
         self, batch: tuple[Tensor, Tensor, Tensor, Tensor], mode: Literal["val", "test"]
     ):
         text, text_len, audio, audio_len = batch
-        longest_audio_index = audio_len.argmax().item()
-        longest_audio_len = audio_len[[longest_audio_index]]
-        longest_audio = audio[[longest_audio_index], :, :longest_audio_len]
-        longest_text_len = text_len[[longest_audio_index]]
-        longest_text = text[[longest_audio_index], :longest_text_len]
+        random_audio_index = torch.randint(0, len(audio), (1,)).item()
+        random_audio_len = audio_len[[random_audio_index]]
+        random_audio = audio[[random_audio_index], :, :random_audio_len]
+        random_text_len = text_len[[random_audio_index]]
+        random_text = text[[random_audio_index], :random_text_len]
         with torch.no_grad():
             pred = self.delayed_transformer(
-                longest_text,
-                longest_audio[:, :, :-1],
-                longest_text_len,
-                longest_audio_len - 1,
+                random_text,
+                random_audio[:, :, :-1],
+                random_text_len,
+                random_audio_len - 1,
             )
             pred_sample = nucleus_sample(pred)
             pred = remove_delay(
-                pred_sample, longest_audio_len - 1, self.codec_channels, self.codec_pad
+                pred_sample, random_audio_len - 1, self.codec_channels, self.codec_pad
             )
             pred = pred.clamp_max(self.cfg.data.codec_sos - 1)
             gen = self.inference(
                 text=self.sample_text,
-                target_text=longest_text,
-                target_audio=longest_audio,
+                target_text=random_text,
+                target_audio=random_audio,
                 text_len=self.sample_text_len,
-                target_text_len=longest_text_len,
-                target_audio_len=longest_audio_len,
+                target_text_len=random_text_len,
+                target_audio_len=random_audio_len,
             )
-            longest_audio = remove_delay(
-                longest_audio, longest_audio_len, self.codec_channels, self.codec_pad
+            random_audio = remove_delay(
+                random_audio, random_audio_len, self.codec_channels, self.codec_pad
             )
 
         if gen.shape[2] < 30:
             tqdm.write(f"Generated audio is too short, {gen.shape[2]} < 30")
-            codec_list = [longest_audio, pred]
+            codec_list = [random_audio, pred]
         else:
-            codec_list = [longest_audio, pred, gen]
+            codec_list = [random_audio, pred, gen]
 
         data: list[tuple[np.ndarray, np.ndarray]] = []
         for codec in codec_list:
@@ -297,7 +297,7 @@ class VoiceGen(LightningModule):
                 audio.squeeze(1),
                 n_fft=1024,
                 num_mels=80,
-                sampling_rate=self.cfg.data.sample_rate,
+                sampling_rate=self.sample_rate,
                 hop_size=256,
                 win_size=1024,
                 fmin=0,
@@ -314,7 +314,7 @@ class VoiceGen(LightningModule):
                 columns=["Audio", "Mel"],
                 data=[
                     [
-                        wandb.Audio(audio, sample_rate=self.cfg.data.sample_rate),
+                        wandb.Audio(audio, sample_rate=self.sample_rate),
                         wandb.Image(mel_image, mode="RGBA"),
                     ]
                     for (audio, mel_image) in data
@@ -326,7 +326,7 @@ class VoiceGen(LightningModule):
                     f"{mode}/Audio/{name}",
                     audio / np.iinfo(np.int16).max,
                     self.global_step,
-                    sample_rate=self.cfg.data.sample_rate,
+                    sample_rate=self.sample_rate,
                 )
                 self.logger.experiment.add_image(
                     f"{mode}/Mel/{name}",

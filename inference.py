@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 import torch
+from matplotlib import pyplot as plt
 
 from data.datamodule import VoiceGenDataModule
 from model.voicegen import VoiceGen
@@ -10,6 +11,7 @@ from utils.audio import (
     codec_to_audio,
     get_encodec_model,
     load_audio,
+    mel_spectrogram,
     save_audio,
 )
 from utils.text import encode_text
@@ -53,7 +55,6 @@ def main(
             target_text_len = torch.tensor([encoded_target_text.shape[1]]).to("cuda")
             target_audio_len = torch.tensor([target_audio_codec.shape[2]]).to("cuda")
         else:
-            cfg.train.batch_size = 1
             datamodule = VoiceGenDataModule(cfg)
             datamodule.prepare_data()
             datamodule.setup()
@@ -63,10 +64,15 @@ def main(
                 target_audio_codec,
                 target_audio_len,
             ) = next(iter(datamodule.test_dataloader()))
-            target_text_len = target_text_len[:1]
-            encoded_target_text = encoded_target_text[:1, : target_text_len[0]]
-            target_audio_len = target_audio_len[:1]
-            target_audio_codec = target_audio_codec[:1, :, : target_audio_len[0]]
+            random_audio_index = torch.randint(0, len(target_audio_codec), (1,)).item()
+            target_audio_len = target_audio_len[[random_audio_index]].to("cuda")
+            target_audio_codec = target_audio_codec[
+                [random_audio_index], :, :target_audio_len
+            ].to("cuda")
+            target_text_len = target_text_len[[random_audio_index]].to("cuda")
+            encoded_target_text = encoded_target_text[
+                [random_audio_index], :target_text_len
+            ].to("cuda")
 
         generated_audio = model.inference(
             encoded_text,
@@ -77,18 +83,40 @@ def main(
             target_audio_len,
         )
 
-        raw_audio = codec_to_audio(generated_audio, encodec_model)
-        raw_audio_numpy = raw_audio.squeeze(0).cpu().numpy()
+        raw_audio = codec_to_audio(generated_audio, encodec_model).squeeze(0)
+        raw_audio_numpy = raw_audio.detach().cpu().numpy()
 
         save_audio(Path("generated.wav"), raw_audio_numpy, cfg.data.sample_rate)
+        mel = (
+            mel_spectrogram(
+                raw_audio,
+                n_fft=1024,
+                num_mels=80,
+                sampling_rate=cfg.data.sample_rate,
+                hop_size=256,
+                win_size=1024,
+                fmin=0,
+                fmax=8000,
+            )
+            .squeeze(0)
+            .cpu()
+            .numpy()
+        )
+
+        fig, ax = plt.subplots(figsize=(10, 2))
+        im = ax.imshow(mel, aspect="auto", origin="lower", interpolation="none")
+        fig.colorbar(im, ax=ax)
+
+        fig.canvas.draw()
+        fig.savefig("generated.png")
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--text", type=str, required=True)
-    parser.add_argument("--checkpoint_path", type=str, required=True)
-    parser.add_argument("--target_text", type=str, required=False)
-    parser.add_argument("--target_audio", type=Path, required=False)
+    parser.add_argument("--checkpoint-path", type=str, required=True)
+    parser.add_argument("--target-text", type=str, required=False)
+    parser.add_argument("--target-audio", type=Path, required=False)
     args = parser.parse_args()
 
     text: str = args.text

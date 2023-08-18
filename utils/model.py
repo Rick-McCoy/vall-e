@@ -37,3 +37,25 @@ def nucleus_sample(logits: Tensor, top_p: float = 0.9) -> Tensor:
     sample = torch.multinomial(sorted_probs.reshape(-1, vocab_size), num_samples=1)
     sample = sample.reshape(*prefix_shape, 1)
     return sorted_indices.gather(dim=-1, index=sample).squeeze(-1)
+
+
+def top_k_sample(logits: Tensor, top_k: int = 125) -> Tensor:
+    """
+    Truncate the distribution to the top_k tokens using the
+    cumulative probability distribution of the sorted logit values.
+
+    Args:
+        logits (Tensor): Logits of the next token.
+        top_k (int): The number of tokens to truncate.
+
+    Returns:
+        Tensor: The sampled token.
+    """
+    *prefix_shape, vocab_size = logits.shape
+    probs = F.softmax(logits, dim=-1)
+    sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+    sorted_probs[..., top_k:] = 0.0
+    sorted_probs = sorted_probs / (sorted_probs.sum(dim=-1, keepdim=True) + 1e-6)
+    sample = torch.multinomial(sorted_probs.reshape(-1, vocab_size), num_samples=1)
+    sample = sample.reshape(*prefix_shape, 1)
+    return sorted_indices.gather(dim=-1, index=sample).squeeze(-1)

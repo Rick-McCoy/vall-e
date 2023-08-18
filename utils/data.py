@@ -32,10 +32,10 @@ def load_metadata(
 def plot_mel_spectrogram(mel: np.ndarray):
     fig, ax = plt.subplots(figsize=(10, 2))
     im = ax.imshow(mel, aspect="auto", origin="lower", interpolation="none")
-    plt.colorbar(im, ax=ax)
+    fig.colorbar(im, ax=ax)
 
     fig.canvas.draw()
-    plt.close()
+    plt.close(fig)
 
     return np.array(
         fig.canvas.buffer_rgba()  # pyright: ignore [reportGeneralTypeIssues]
