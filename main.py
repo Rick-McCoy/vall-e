@@ -116,7 +116,7 @@ def main(cfg: Config):
         accumulate_grad_batches=cfg.train.acc,
         gradient_clip_val=cfg.train.gradient_clip_val,
         callbacks=callbacks,
-        detect_anomaly=False,
+        detect_anomaly=cfg.train.fast_dev_run,
         fast_dev_run=cfg.train.fast_dev_run,
         logger=logger,
         log_every_n_steps=10,

@@ -166,12 +166,12 @@ class VoiceGen(LightningModule):
         self, batch: tuple[Tensor, Tensor, Tensor, Tensor], batch_idx: int
     ):
         self.single_step(batch, "val")
-        if batch_idx == 0 and self.device.index == 0:
+        if batch_idx == 0 and self.global_rank == 0:
             self.log_table(batch, "val")
 
     def test_step(self, batch: tuple[Tensor, Tensor, Tensor, Tensor], batch_idx: int):
         self.single_step(batch, "test")
-        if batch_idx == 0 and self.device.index == 0:
+        if batch_idx == 0 and self.global_rank == 0:
             self.log_table(batch, "test")
 
     def configure_optimizers(self):
